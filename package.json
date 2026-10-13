@@ -1,0 +1,31 @@
+{
+  "name": "referral-engine",
+  "version": "1.0.0",
+  "description": "Automated Contact Discovery and Google Mail-Merge Pipeline",
+  "private": true,
+  "scripts": {
+    "postinstall": "npm run install:server && npm run install:client",
+    "install:server": "npm --prefix server install",
+    "install:client": "npm --prefix client install",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "build:server": "npm --prefix server run build",
+    "build:client": "npm --prefix client run build",
+    "build": "npm run build:server && npm run build:client",
+    "test:server": "npm --prefix server run test",
+    "test": "npm run test:server",
+    "db:push": "npm --prefix server run db:push",
+    "db:generate": "npm --prefix server run db:generate"
+  },
+  "keywords": [
+    "contact-discovery",
+    "apollo",
+    "hunter",
+    "google-workspace",
+    "mail-merge",
+    "recruitment",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT"
+}

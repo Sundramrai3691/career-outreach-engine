@@ -1,0 +1,272 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 1. Company Record
+model Company {
+  id               String            @id @default(uuid())
+  name             String
+  domain           String?           @unique
+  normalizedDomain String?
+  location         String?
+  jobUrl           String?
+  notes            String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  contacts         Contact[]
+  discoveryItems   DiscoveryRunItem[]
+
+  @@index([name])
+  @@index([normalizedDomain])
+}
+
+// 2. Target Roles (Catalog and per-run targeting)
+model TargetRole {
+  id             String             @id @default(uuid())
+  title          String             @unique
+  normalizedTitle String
+  category       String?            // e.g. "Recruiting", "Engineering Management"
+  createdAt      DateTime           @default(now())
+}
+
+// 3. Contact Record (De-duplicated entity)
+model Contact {
+  id                String             @id @default(uuid())
+  firstName         String?
+  lastName          String?
+  fullName          String
+  email             String             @unique
+  jobTitle          String?
+  companyId         String?
+  companyName       String
+  companyDomain     String?
+  matchedRole       String?
+  primarySource     String             // "apollo", "hunter", "snov", "manual"
+  emailStatus       String             // "verified", "unverified", "accept_all", "unknown", "invalid", "unavailable"
+  confidenceScore   Int?               // 0 to 100
+  outreachState     String             @default("not_contacted") // "not_contacted", "selected", "draft_created", "queued", "sending", "sent", "failed", "bounced", "replied", "opted_out", "suppressed"
+  notes             String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  company           Company?           @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  sources           ContactSource[]
+  verifications     EmailVerification[]
+  campaignRecipients CampaignRecipient[]
+
+  @@index([email])
+  @@index([companyName])
+  @@index([emailStatus])
+  @@index([outreachState])
+}
+
+// 4. Contact Sources (Provenance tracking across multiple providers)
+model ContactSource {
+  id             String    @id @default(uuid())
+  contactId      String
+  provider       String    // "apollo", "hunter", "snov"
+  providerPersonId String?
+  rawTitle       String?
+  rawEmail       String?
+  sourceUrl      String?
+  confidence     Int?
+  extractedAt    DateTime  @default(now())
+  metadataJson   String?   // JSON string of full raw evidence
+
+  contact        Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId])
+  @@index([provider])
+}
+
+// 5. Email Verification Details
+model EmailVerification {
+  id             String    @id @default(uuid())
+  contactId      String
+  provider       String    // "hunter", "internal_smtp", "apollo"
+  status         String    // "valid", "invalid", "accept_all", "unknown"
+  score          Int?      // 0-100
+  isSmtpValid    Boolean?
+  isMxValid      Boolean?
+  isDisposable   Boolean?
+  isCatchAll     Boolean?
+  rawResponseJson String?
+  verifiedAt     DateTime  @default(now())
+
+  contact        Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId])
+}
+
+// 6. Discovery Runs (Persistent Job Model)
+model DiscoveryRun {
+  id               String             @id @default(uuid())
+  status           String             // "pending", "running", "completed", "partially_completed", "failed", "cancelled"
+  totalCompanies   Int                @default(0)
+  processedCompanies Int              @default(0)
+  contactsFound    Int                @default(0)
+  creditsConsumed  Float              @default(0.0)
+  maxBudget        Float?
+  allowEnrichment  Boolean            @default(false)
+  freeFirstMode    Boolean            @default(true)
+  verifyEmails     Boolean            @default(true)
+  startedAt        DateTime           @default(now())
+  completedAt      DateTime?
+  errorMessage     String?
+  
+  items            DiscoveryRunItem[]
+
+  @@index([status])
+}
+
+// 7. Discovery Run Items (Per-Company Progress & Provider Trail)
+model DiscoveryRunItem {
+  id               String        @id @default(uuid())
+  discoveryRunId   String
+  companyId        String?
+  companyName      String
+  companyDomain    String?
+  targetRolesJson  String        // JSON array of strings
+  status           String        // "waiting", "resolving_company", "searching_contacts", "finding_emails", "verifying", "completed", "failed"
+  providersTriedJson String      // JSON array e.g. ["apollo", "hunter"]
+  contactsFound    Int           @default(0)
+  errorMessage     String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  discoveryRun     DiscoveryRun  @relation(fields: [discoveryRunId], references: [id], onDelete: Cascade)
+  company          Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([discoveryRunId])
+  @@index([status])
+}
+
+// 8. Campaigns
+model Campaign {
+  id                  String              @id @default(uuid())
+  name                String
+  status              String              // "draft", "prepared", "in_progress", "completed", "paused"
+  googleSpreadsheetId String?
+  googleSpreadsheetUrl String?
+  googleDocId         String?
+  googleDocUrl        String?
+  templateId          String?
+  totalRecipients     Int                 @default(0)
+  sentCount           Int                 @default(0)
+  failedCount         Int                 @default(0)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  template            EmailTemplate?      @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  recipients          CampaignRecipient[]
+
+  @@index([status])
+}
+
+// 9. Campaign Recipients (With Idempotency Key & Outreach State)
+model CampaignRecipient {
+  id             String    @id @default(uuid())
+  campaignId     String
+  contactId      String
+  email          String
+  firstName      String?
+  lastName       String?
+  companyName    String
+  jobTitle       String?
+  jobUrl         String?
+  status         String    @default("selected") // "selected", "draft_created", "queued", "sending", "sent", "failed", "bounced", "opted_out", "suppressed"
+  idempotencyKey String    @unique
+  gmailDraftId   String?
+  gmailMessageId String?
+  sentAt         DateTime?
+  errorMessage   String?
+  personalizedSubject String?
+  personalizedBody    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  campaign       Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact        Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, contactId])
+  @@index([campaignId])
+  @@index([contactId])
+  @@index([status])
+}
+
+// 10. Email Templates
+model EmailTemplate {
+  id          String     @id @default(uuid())
+  name        String
+  subject     String
+  bodyText    String
+  signature   String?
+  isDefault   Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  campaigns   Campaign[]
+}
+
+// 11. Google Connections (Encrypted Tokens at Rest)
+model GoogleConnection {
+  id               String    @id @default(uuid())
+  email            String    @unique
+  name             String?
+  picture          String?
+  encryptedAccessToken  String
+  encryptedRefreshToken String
+  tokenExpiry      DateTime?
+  scopesJson       String    // JSON array of granted scopes
+  status           String    @default("connected") // "connected", "expired", "revoked"
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+// 12. Provider Configurations & Spending Caps
+model ProviderSetting {
+  id              String    @id @default(uuid())
+  providerKey     String    @unique // "apollo", "hunter", "snov"
+  isEnabled       Boolean   @default(true)
+  priority        Int       @default(1)
+  encryptedApiKey String?
+  encryptedSecret String?   // for Snov client secret
+  spendingCap     Float?
+  creditsUsed     Float     @default(0.0)
+  lastHealthCheck DateTime?
+  healthStatus    String    @default("unknown") // "healthy", "error", "rate_limited", "quota_exhausted", "unknown"
+  lastErrorMessage String?
+  updatedAt       DateTime  @updatedAt
+}
+
+// 13. Global Settings & Application Caps
+model SystemSetting {
+  key         String   @id
+  valueJson   String   // Arbitrary JSON string
+  updatedAt   DateTime @updatedAt
+}
+
+// 14. Email Suppression List (Bounces & Opt-Outs)
+model Suppression {
+  email       String   @id
+  reason      String   // "bounced", "opted_out", "manual_block"
+  createdAt   DateTime @default(now())
+  notes       String?
+}
+
+// 15. Audit Log Events
+model AuditEvent {
+  id          String   @id @default(uuid())
+  category    String   // "discovery", "google_oauth", "file_generation", "sending", "settings"
+  action      String
+  detailsJson String?
+  createdAt   DateTime @default(now())
+
+  @@index([category])
+  @@index([createdAt])
+}

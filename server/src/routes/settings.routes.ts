@@ -1,0 +1,151 @@
+import { Router } from 'express';
+import { PrismaClient } from '@prisma/client';
+import { ApolloProvider } from '../providers/apollo/apollo.provider.js';
+import { HunterProvider } from '../providers/hunter/hunter.provider.js';
+import { SnovProvider } from '../providers/snov/snov.provider.js';
+import { MockProvider } from '../providers/mock/mock.provider.js';
+import { encryptSecret } from '../utils/crypto.js';
+import { SuppressionService } from '../services/suppression.service.js';
+import { SuppressionInputSchema } from '../models/validation.js';
+
+export function createSettingsRouter(prisma: PrismaClient): Router {
+  const router = Router();
+  const suppressionService = new SuppressionService(prisma);
+
+  /**
+   * Get all provider settings and health statuses
+   */
+  router.get('/', async (_req, res, next) => {
+    try {
+      const dbSettings = await prisma.providerSetting.findMany();
+      const providers = ['apollo', 'hunter', 'snov', 'mock'] as const;
+
+      const results = await Promise.all(
+        providers.map(async (key) => {
+          const setting = dbSettings.find((s) => s.providerKey === key);
+          const hasEnvKey = Boolean(
+            key === 'apollo'
+              ? process.env.APOLLO_API_KEY
+              : key === 'hunter'
+              ? process.env.HUNTER_API_KEY
+              : key === 'snov'
+              ? process.env.SNOV_CLIENT_ID
+              : true
+          );
+
+          return {
+            key,
+            isEnabled: setting ? setting.isEnabled : true,
+            priority: setting ? setting.priority : key === 'apollo' ? 1 : key === 'hunter' ? 2 : 3,
+            hasKey: Boolean(setting?.encryptedApiKey || hasEnvKey),
+            spendingCap: setting?.spendingCap ?? null,
+            creditsUsed: setting?.creditsUsed ?? 0,
+            healthStatus: setting?.healthStatus ?? 'unknown',
+            lastErrorMessage: setting?.lastErrorMessage ?? null,
+            lastHealthCheck: setting?.lastHealthCheck ?? null,
+          };
+        })
+      );
+
+      res.json({
+        providers: results,
+        dailySendCap: parseInt(process.env.DAILY_GMAIL_SEND_CAP || '30', 10),
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * Update a provider's settings or key
+   */
+  router.post('/providers/:key', async (req, res, next) => {
+    try {
+      const key = req.params.key;
+      const { isEnabled, priority, apiKey, secret, spendingCap } = req.body;
+
+      const data: any = {};
+      if (typeof isEnabled === 'boolean') data.isEnabled = isEnabled;
+      if (typeof priority === 'number') data.priority = priority;
+      if (typeof spendingCap === 'number' || spendingCap === null) data.spendingCap = spendingCap;
+      if (apiKey && apiKey.trim()) data.encryptedApiKey = encryptSecret(apiKey.trim());
+      if (secret && secret.trim()) data.encryptedSecret = encryptSecret(secret.trim());
+
+      const updated = await prisma.providerSetting.upsert({
+        where: { providerKey: key },
+        update: data,
+        create: {
+          providerKey: key,
+          ...data,
+        },
+      });
+
+      res.json({ success: true, setting: updated });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * Run live health check for a provider
+   */
+  router.post('/providers/:key/health-check', async (req, res, next) => {
+    try {
+      const key = req.params.key;
+      let provider;
+
+      if (key === 'apollo') provider = new ApolloProvider();
+      else if (key === 'hunter') provider = new HunterProvider();
+      else if (key === 'snov') provider = new SnovProvider();
+      else provider = new MockProvider();
+
+      const health = await provider.healthCheck();
+
+      await prisma.providerSetting.upsert({
+        where: { providerKey: key },
+        update: {
+          healthStatus: health.healthy ? 'healthy' : 'error',
+          lastHealthCheck: new Date(),
+          lastErrorMessage: health.healthy ? null : health.message,
+        },
+        create: {
+          providerKey: key,
+          healthStatus: health.healthy ? 'healthy' : 'error',
+          lastHealthCheck: new Date(),
+          lastErrorMessage: health.healthy ? null : health.message,
+        },
+      });
+
+      res.json(health);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * Get suppression list
+   */
+  router.get('/suppressions', async (_req, res, next) => {
+    try {
+      const list = await suppressionService.getAllSuppressed();
+      res.json(list);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * Add to suppression list
+   */
+  router.post('/suppressions', async (req, res, next) => {
+    try {
+      const parsed = SuppressionInputSchema.parse(req.body);
+      await suppressionService.suppressEmail(parsed.email, parsed.reason, parsed.notes);
+      res.status(201).json({ success: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  return router;
+}
