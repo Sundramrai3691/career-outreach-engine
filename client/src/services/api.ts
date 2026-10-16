@@ -48,6 +48,11 @@ export const api = {
       method: 'POST',
     }),
 
+  getSuggestions: (type: 'companies' | 'roles' | 'locations', q = '') =>
+    request<{ suggestions: Array<{ value: string; label: string; subtext?: string }> }>(
+      `/discovery/suggestions?type=${encodeURIComponent(type)}&q=${encodeURIComponent(q)}`
+    ),
+
   // Contacts
   getContacts: (params: Record<string, string | number> = {}) => {
     const query = new URLSearchParams(params as any).toString();
@@ -55,6 +60,27 @@ export const api = {
   },
 
   getContact: (id: string) => request<any>(`/contacts/${id}`),
+
+  importContactsCsv: (csvContent: string, fileName?: string) =>
+    request<{
+      success: boolean;
+      summary: {
+        totalRows: number;
+        imported: number;
+        updated: number;
+        skippedSuppressed: number;
+        errors: number;
+      };
+      createdCount: number;
+      updatedCount: number;
+      suppressedCount: number;
+      errorCount: number;
+      rowErrors: Array<{ row: number; error: string; raw: any }>;
+      contacts: any[];
+    }>('/contacts/import', {
+      method: 'POST',
+      body: JSON.stringify({ csvContent, fileName }),
+    }),
 
   exportContactsCsv: async (contactIds?: string[]) => {
     const response = await fetch(`${API_BASE}/contacts/export`, {

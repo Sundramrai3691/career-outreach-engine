@@ -5,7 +5,6 @@ import {
   FileText,
   Mail,
   Settings as SettingsIcon,
-  PlayCircle,
   Activity,
   Layers,
 } from 'lucide-react';
@@ -19,11 +18,10 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, googleStatus }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Activity },
-    { id: 'new-discovery', label: 'New Discovery', icon: Search },
-    { id: 'discovery-runs', label: 'Active Runs', icon: PlayCircle },
+    { id: 'discover', label: 'Discover', icon: Search },
     { id: 'contacts', label: 'Contacts', icon: Users },
-    { id: 'templates', label: 'Templates', icon: FileText },
     { id: 'campaigns', label: 'Campaigns', icon: Mail },
+    { id: 'templates', label: 'Templates', icon: FileText },
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
   ];
 
@@ -103,7 +101,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, googl
 
           <button
             className="btn btn-primary btn-sm"
-            onClick={() => setCurrentTab('new-discovery')}
+            onClick={() => setCurrentTab('discover')}
           >
             <Search size={14} />
             <span>Find Contacts</span>

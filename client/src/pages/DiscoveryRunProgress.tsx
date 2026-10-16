@@ -10,16 +10,21 @@ import {
   Users,
   Coins,
   Building,
+  AlertCircle,
 } from 'lucide-react';
 
 interface DiscoveryRunProgressProps {
   runId: string;
   onNavigateToContacts: () => void;
+  onNavigateToSettings?: () => void;
+  onNavigateToNewDiscovery?: () => void;
 }
 
 export const DiscoveryRunProgress: React.FC<DiscoveryRunProgressProps> = ({
   runId,
   onNavigateToContacts,
+  onNavigateToSettings,
+  onNavigateToNewDiscovery,
 }) => {
   const [run, setRun] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -35,7 +40,15 @@ export const DiscoveryRunProgress: React.FC<DiscoveryRunProgressProps> = ({
         setLoading(false);
 
         // If completed or failed, slow down or stop polling
-        if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
+        if (
+          data.status === 'completed' ||
+          data.status === 'completed_with_results' ||
+          data.status === 'completed_no_results' ||
+          data.status === 'partially_completed' ||
+          data.status === 'blocked_by_provider' ||
+          data.status === 'failed' ||
+          data.status === 'cancelled'
+        ) {
           clearInterval(interval);
         }
       } catch (err) {
@@ -69,8 +82,42 @@ export const DiscoveryRunProgress: React.FC<DiscoveryRunProgressProps> = ({
     );
   }
 
-  const isFinished = run?.status === 'completed' || run?.status === 'failed' || run?.status === 'cancelled';
+  const isFinished =
+    run?.status === 'completed' ||
+    run?.status === 'completed_with_results' ||
+    run?.status === 'completed_no_results' ||
+    run?.status === 'partially_completed' ||
+    run?.status === 'blocked_by_provider' ||
+    run?.status === 'waiting_for_credentials' ||
+    run?.status === 'failed' ||
+    run?.status === 'cancelled';
   const progressPercent = run?.totalCompanies > 0 ? Math.round((run.processedCompanies / run.totalCompanies) * 100) : 0;
+
+  const getRunStatusBadge = () => {
+    switch (run?.status) {
+      case 'completed':
+      case 'completed_with_results':
+        return <span className="badge badge-verified"><CheckCircle size={12} /> Completed ({run.contactsFound})</span>;
+      case 'partially_completed':
+        return <span className="badge badge-accept_all"><CheckCircle size={12} /> Partially Completed ({run.contactsFound})</span>;
+      case 'blocked_by_provider':
+        return <span className="badge badge-invalid"><AlertCircle size={12} /> Blocked by Provider</span>;
+      case 'completed_no_results':
+        return <span className="badge badge-accept_all"><AlertCircle size={12} /> Completed (0 Results)</span>;
+      case 'waiting_for_credentials':
+        return <span className="badge badge-invalid"><Clock size={12} /> Credentials Missing</span>;
+      case 'failed':
+        return <span className="badge badge-invalid"><XCircle size={12} /> Failed</span>;
+      case 'cancelled':
+        return <span className="badge badge-unverified"><StopCircle size={12} /> Cancelled</span>;
+      default:
+        return (
+          <span className="badge badge-accept_all">
+            <Loader2 size={12} className="animate-pulse" /> Running
+          </span>
+        );
+    }
+  };
 
   return (
     <div>
@@ -87,18 +134,7 @@ export const DiscoveryRunProgress: React.FC<DiscoveryRunProgressProps> = ({
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
               <h2>Discovery Run</h2>
-              <span
-                className={`badge ${
-                  run.status === 'completed'
-                    ? 'badge-verified'
-                    : run.status === 'running'
-                    ? 'badge-accept_all'
-                    : 'badge-invalid'
-                }`}
-              >
-                {run.status === 'running' && <Loader2 size={12} className="animate-pulse" />}
-                {run.status}
-              </span>
+              {getRunStatusBadge()}
             </div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
               Started {new Date(run.startedAt).toLocaleTimeString()} • Run ID: <code>{run.id.slice(0, 8)}</code>
@@ -112,13 +148,89 @@ export const DiscoveryRunProgress: React.FC<DiscoveryRunProgressProps> = ({
               </button>
             )}
 
-            {isFinished && (
+            {isFinished && run.contactsFound > 0 && (
               <button className="btn btn-primary" onClick={onNavigateToContacts}>
                 <Users size={16} /> View Contacts ({run.contactsFound}) <ArrowRight size={16} />
               </button>
             )}
           </div>
         </div>
+
+        {/* Actionable Error Banner if provider errors occurred */}
+        {run.errorMessage && (
+          <div
+            style={{
+              padding: '1rem 1.25rem',
+              background: run.contactsFound > 0 ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+              border: `1px solid ${run.contactsFound > 0 ? 'rgba(245, 158, 11, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+              borderRadius: 'var(--radius-md)',
+              marginTop: '1.25rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.75rem',
+              fontSize: '0.875rem',
+              color: run.contactsFound > 0 ? '#fde68a' : '#fca5a5',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+              <AlertCircle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.2rem' }}>
+                  {run.status === 'blocked_by_provider'
+                    ? 'Provider Access Restricted'
+                    : run.status === 'waiting_for_credentials'
+                    ? 'Provider Credentials Required'
+                    : 'Provider Diagnostics'}
+                </div>
+                <div style={{ lineHeight: 1.4 }}>{run.errorMessage}</div>
+              </div>
+            </div>
+
+            {/* Actionable Fallback Options */}
+            {(run.status === 'blocked_by_provider' || run.status === 'waiting_for_credentials' || (isFinished && run.contactsFound === 0)) && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  flexWrap: 'wrap',
+                  paddingTop: '0.75rem',
+                  borderTop: `1px solid ${run.contactsFound > 0 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
+                }}
+              >
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#f1f5f9' }}>Actionable Alternatives:</span>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={onNavigateToContacts}
+                  style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
+                >
+                  Import Contacts from CSV
+                </button>
+                {onNavigateToSettings && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={onNavigateToSettings}
+                    style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
+                  >
+                    Review Settings & Plans
+                  </button>
+                )}
+                {onNavigateToNewDiscovery && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={onNavigateToNewDiscovery}
+                    style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
+                  >
+                    Test with Mock Simulator
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Progress Bar */}
         <div style={{ marginTop: '1.5rem' }}>
@@ -184,18 +296,28 @@ export const DiscoveryRunProgress: React.FC<DiscoveryRunProgressProps> = ({
             <tbody>
               {run.items?.map((item: any) => {
                 const roles: string[] = JSON.parse(item.targetRolesJson || '[]');
-                const providersTried: string[] = JSON.parse(item.providersTriedJson || '[]');
+                let providersTried: any[] = [];
+                try {
+                  providersTried = JSON.parse(item.providersTriedJson || '[]');
+                } catch {
+                  providersTried = [];
+                }
 
                 const getStatusBadge = () => {
                   switch (item.status) {
                     case 'completed':
-                      return <span className="badge badge-verified"><CheckCircle size={12} /> Completed</span>;
+                      return (
+                        <span className={`badge ${item.contactsFound > 0 ? 'badge-verified' : 'badge-unverified'}`}>
+                          {item.contactsFound > 0 ? <CheckCircle size={12} /> : null}
+                          {item.contactsFound > 0 ? 'Completed' : 'No Contacts'}
+                        </span>
+                      );
                     case 'failed':
                       return <span className="badge badge-invalid"><XCircle size={12} /> Failed</span>;
                     case 'waiting':
                       return <span className="badge badge-unverified"><Clock size={12} /> Waiting</span>;
                     case 'searching_contacts':
-                      return <span className="badge badge-accept_all"><Loader2 size={12} className="animate-pulse" /> Searching Apollo</span>;
+                      return <span className="badge badge-accept_all"><Loader2 size={12} className="animate-pulse" /> Searching</span>;
                     case 'finding_emails':
                       return <span className="badge badge-accept_all"><Loader2 size={12} className="animate-pulse" /> Finding Emails</span>;
                     case 'verifying':
@@ -212,6 +334,11 @@ export const DiscoveryRunProgress: React.FC<DiscoveryRunProgressProps> = ({
                       {item.companyDomain && (
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.companyDomain}</div>
                       )}
+                      {item.errorMessage && (
+                        <div style={{ fontSize: '0.75rem', color: '#fca5a5', marginTop: '0.25rem', lineHeight: 1.3 }}>
+                          {item.errorMessage}
+                        </div>
+                      )}
                     </td>
                     <td>
                       <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
@@ -221,21 +348,48 @@ export const DiscoveryRunProgress: React.FC<DiscoveryRunProgressProps> = ({
                     <td>{getStatusBadge()}</td>
                     <td>
                       <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap' }}>
-                        {providersTried.map((p) => (
-                          <span
-                            key={p}
-                            style={{
-                              fontSize: '0.6875rem',
-                              padding: '0.125rem 0.375rem',
-                              background: 'rgba(255, 255, 255, 0.06)',
-                              borderRadius: 'var(--radius-sm)',
-                              textTransform: 'uppercase',
-                              fontWeight: 600,
-                            }}
-                          >
-                            {p}
-                          </span>
-                        ))}
+                        {providersTried.map((entry: any, idx: number) => {
+                          const pName = typeof entry === 'string' ? entry : entry.provider;
+                          const pStatus = typeof entry === 'string' ? 'unknown' : entry.status;
+                          const pReason = typeof entry === 'string' ? '' : entry.reason;
+
+                          let bg = 'rgba(255, 255, 255, 0.06)';
+                          let color = 'var(--text-secondary)';
+                          let border = 'transparent';
+
+                          if (pStatus === 'found') {
+                            bg = 'rgba(16, 185, 129, 0.15)';
+                            color = '#6ee7b7';
+                            border = 'rgba(16, 185, 129, 0.3)';
+                          } else if (pStatus === 'error') {
+                            bg = 'rgba(239, 68, 68, 0.15)';
+                            color = '#fca5a5';
+                            border = 'rgba(239, 68, 68, 0.3)';
+                          } else if (pStatus === 'skipped') {
+                            bg = 'rgba(255, 255, 255, 0.03)';
+                            color = 'var(--text-muted)';
+                          }
+
+                          return (
+                            <span
+                              key={`${pName}-${idx}`}
+                              title={pReason ? `${pName}: ${pReason}` : pName}
+                              style={{
+                                fontSize: '0.6875rem',
+                                padding: '0.125rem 0.375rem',
+                                background: bg,
+                                border: `1px solid ${border}`,
+                                color,
+                                borderRadius: 'var(--radius-sm)',
+                                textTransform: 'uppercase',
+                                fontWeight: 600,
+                                cursor: pReason ? 'help' : 'default',
+                              }}
+                            >
+                              {pName}
+                            </span>
+                          );
+                        })}
                       </div>
                     </td>
                     <td style={{ textAlign: 'right', fontWeight: 600 }}>

@@ -4,13 +4,17 @@ import { ApolloProvider } from '../providers/apollo/apollo.provider.js';
 import { HunterProvider } from '../providers/hunter/hunter.provider.js';
 import { SnovProvider } from '../providers/snov/snov.provider.js';
 import { MockProvider } from '../providers/mock/mock.provider.js';
+import { OfficialWebProvider } from '../providers/official-web/official-web.provider.js';
 import { encryptSecret } from '../utils/crypto.js';
 import { SuppressionService } from '../services/suppression.service.js';
 import { SuppressionInputSchema } from '../models/validation.js';
+import { CredentialResolver } from '../config/credential-resolver.js';
+import { ProviderName } from '../models/types.js';
 
 export function createSettingsRouter(prisma: PrismaClient): Router {
   const router = Router();
   const suppressionService = new SuppressionService(prisma);
+  const resolver = new CredentialResolver(prisma);
 
   /**
    * Get all provider settings and health statuses
@@ -18,26 +22,21 @@ export function createSettingsRouter(prisma: PrismaClient): Router {
   router.get('/', async (_req, res, next) => {
     try {
       const dbSettings = await prisma.providerSetting.findMany();
-      const providers = ['apollo', 'hunter', 'snov', 'mock'] as const;
+      const providers: ProviderName[] = ['apollo', 'hunter', 'snov', 'official_website', 'mock'];
 
       const results = await Promise.all(
         providers.map(async (key) => {
           const setting = dbSettings.find((s) => s.providerKey === key);
-          const hasEnvKey = Boolean(
-            key === 'apollo'
-              ? process.env.APOLLO_API_KEY
-              : key === 'hunter'
-              ? process.env.HUNTER_API_KEY
-              : key === 'snov'
-              ? process.env.SNOV_CLIENT_ID
-              : true
-          );
+          const resolved = await resolver.resolve(key);
 
           return {
             key,
             isEnabled: setting ? setting.isEnabled : true,
-            priority: setting ? setting.priority : key === 'apollo' ? 1 : key === 'hunter' ? 2 : 3,
-            hasKey: Boolean(setting?.encryptedApiKey || hasEnvKey),
+            priority: setting ? setting.priority : key === 'apollo' ? 1 : key === 'hunter' ? 2 : key === 'snov' ? 3 : 4,
+            hasKey: resolved.isConfigured,
+            isConfigured: resolved.isConfigured,
+            source: resolved.source,
+            missingEnvVar: resolved.missingEnvVar,
             spendingCap: setting?.spendingCap ?? null,
             creditsUsed: setting?.creditsUsed ?? 0,
             healthStatus: setting?.healthStatus ?? 'unknown',
@@ -68,8 +67,22 @@ export function createSettingsRouter(prisma: PrismaClient): Router {
       if (typeof isEnabled === 'boolean') data.isEnabled = isEnabled;
       if (typeof priority === 'number') data.priority = priority;
       if (typeof spendingCap === 'number' || spendingCap === null) data.spendingCap = spendingCap;
-      if (apiKey && apiKey.trim()) data.encryptedApiKey = encryptSecret(apiKey.trim());
-      if (secret && secret.trim()) data.encryptedSecret = encryptSecret(secret.trim());
+
+      if (typeof apiKey === 'string') {
+        if (apiKey.trim().length > 0) {
+          data.encryptedApiKey = encryptSecret(apiKey.trim());
+        } else {
+          data.encryptedApiKey = null;
+        }
+      }
+
+      if (typeof secret === 'string') {
+        if (secret.trim().length > 0) {
+          data.encryptedSecret = encryptSecret(secret.trim());
+        } else {
+          data.encryptedSecret = null;
+        }
+      }
 
       const updated = await prisma.providerSetting.upsert({
         where: { providerKey: key },
@@ -91,12 +104,14 @@ export function createSettingsRouter(prisma: PrismaClient): Router {
    */
   router.post('/providers/:key/health-check', async (req, res, next) => {
     try {
-      const key = req.params.key;
-      let provider;
+      const key = req.params.key as ProviderName;
+      const resolved = await resolver.resolve(key);
 
-      if (key === 'apollo') provider = new ApolloProvider();
-      else if (key === 'hunter') provider = new HunterProvider();
-      else if (key === 'snov') provider = new SnovProvider();
+      let provider;
+      if (key === 'apollo') provider = new ApolloProvider(resolved.apiKey);
+      else if (key === 'hunter') provider = new HunterProvider(resolved.apiKey);
+      else if (key === 'snov') provider = new SnovProvider(resolved.apiKey, resolved.secret);
+      else if (key === 'official_website') provider = new OfficialWebProvider();
       else provider = new MockProvider();
 
       const health = await provider.healthCheck();
@@ -116,7 +131,11 @@ export function createSettingsRouter(prisma: PrismaClient): Router {
         },
       });
 
-      res.json(health);
+      res.json({
+        ...health,
+        source: resolved.source,
+        isConfigured: resolved.isConfigured,
+      });
     } catch (err) {
       next(err);
     }

@@ -1,3 +1,4 @@
+import './config/env.js';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
@@ -25,9 +26,21 @@ export function createApp(prismaClient?: PrismaClient, customOrchestrator?: Disc
   const workspace = new GoogleWorkspaceService(prisma, googleAuth);
   const gmail = new NativeGmailService(prisma, googleAuth);
 
+  const allowedOrigins = [
+    process.env.CLIENT_ORIGIN || 'http://localhost:5174',
+    'http://localhost:5174',
+    'http://localhost:5173',
+  ];
+
   app.use(
     cors({
-      origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
+      origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error(`CORS policy does not allow origin: ${origin}`));
+        }
+      },
       credentials: true,
     })
   );

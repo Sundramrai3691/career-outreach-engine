@@ -23,7 +23,7 @@ export type OutreachState =
   | 'opted_out'
   | 'suppressed';
 
-export type ProviderName = 'apollo' | 'hunter' | 'snov' | 'mock';
+export type ProviderName = 'apollo' | 'hunter' | 'snov' | 'mock' | 'official_website' | 'csv_import';
 
 export type DiscoveryItemStatus =
   | 'waiting'
@@ -38,7 +38,11 @@ export type DiscoveryRunStatus =
   | 'pending'
   | 'running'
   | 'completed'
+  | 'completed_with_results'
+  | 'completed_no_results'
   | 'partially_completed'
+  | 'waiting_for_credentials'
+  | 'blocked_by_provider'
   | 'failed'
   | 'cancelled';
 
@@ -133,10 +137,24 @@ export interface ProviderUsageResult {
   isUnlimited?: boolean;
 }
 
+export type ProviderHealthStatus =
+  | 'operational'
+  | 'authenticated_restricted'
+  | 'account_restricted'
+  | 'auth_failed'
+  | 'missing_credentials'
+  | 'error';
+
 export interface ProviderHealthResult {
   healthy: boolean;
+  authenticated?: boolean;
+  canSearch?: boolean;
   provider: ProviderName;
+  status?: ProviderHealthStatus;
   message: string;
+  authMessage?: string;
+  restrictionReason?: string;
+  nextAction?: string;
   latencyMs?: number;
 }
 
@@ -146,6 +164,7 @@ export interface DiscoveryRunConfig {
   freeFirstMode: boolean;
   verifyEmails: boolean;
   providerPriority?: ProviderName[];
+  includeOfficialWeb?: boolean;
 }
 
 export interface TemplateVariables {

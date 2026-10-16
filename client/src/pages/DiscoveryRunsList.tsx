@@ -86,17 +86,17 @@ export const DiscoveryRunsList: React.FC<DiscoveryRunsListProps> = ({
                     </td>
 
                     <td>
-                      <span
-                        className={`badge ${
-                          r.status === 'completed'
-                            ? 'badge-verified'
-                            : r.status === 'running'
-                            ? 'badge-accept_all'
-                            : 'badge-invalid'
-                        }`}
-                      >
-                        {r.status}
-                      </span>
+                      {r.status === 'completed' || r.status === 'completed_with_results' ? (
+                        <span className="badge badge-verified">Completed</span>
+                      ) : r.status === 'completed_no_results' ? (
+                        <span className="badge badge-accept_all">0 Results</span>
+                      ) : r.status === 'waiting_for_credentials' ? (
+                        <span className="badge badge-invalid">Missing Credentials</span>
+                      ) : r.status === 'running' ? (
+                        <span className="badge badge-accept_all">Running</span>
+                      ) : (
+                        <span className="badge badge-invalid">{r.status}</span>
+                      )}
                     </td>
 
                     <td>

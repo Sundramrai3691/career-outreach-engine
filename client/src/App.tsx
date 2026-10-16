@@ -74,14 +74,20 @@ export const App: React.FC = () => {
           <Dashboard onNavigate={handleNavigate} />
         )}
 
-        {currentTab === 'new-discovery' && (
-          <NewDiscovery onRunStarted={handleRunStarted} />
+        {(currentTab === 'discover' || currentTab === 'new-discovery') && (
+          <NewDiscovery
+            onRunStarted={handleRunStarted}
+            onViewHistory={() => setCurrentTab('discovery-runs')}
+            onNavigateToContacts={() => setCurrentTab('contacts')}
+          />
         )}
 
         {currentTab === 'discovery-progress' && activeRunId && (
           <DiscoveryRunProgress
             runId={activeRunId}
             onNavigateToContacts={() => setCurrentTab('contacts')}
+            onNavigateToSettings={() => setCurrentTab('settings')}
+            onNavigateToNewDiscovery={() => setCurrentTab('new-discovery')}
           />
         )}
 

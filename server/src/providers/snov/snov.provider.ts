@@ -19,10 +19,19 @@ export class SnovProvider implements IContactProvider {
   private accessToken: string | null = null;
   private tokenExpiresAt = 0;
   private baseUrl = 'https://api.snov.io';
+  private lastError: string | null = null;
 
   constructor(clientId?: string, clientSecret?: string) {
     this.clientId = clientId || process.env.SNOV_CLIENT_ID || '';
     this.clientSecret = clientSecret || process.env.SNOV_CLIENT_SECRET || '';
+  }
+
+  getLastError(): string | null {
+    return this.lastError;
+  }
+
+  clearLastError(): void {
+    this.lastError = null;
   }
 
   setCredentials(clientId: string, clientSecret: string) {
@@ -69,8 +78,12 @@ export class SnovProvider implements IContactProvider {
     if (!this.clientId || !this.clientSecret) {
       return {
         healthy: false,
+        authenticated: false,
+        canSearch: false,
+        status: 'missing_credentials',
         provider: this.name,
         message: 'Snov.io API client credentials (User ID and Secret) not configured.',
+        nextAction: 'Configure SNOV_CLIENT_ID and SNOV_CLIENT_SECRET in Settings or .env.',
       };
     }
 
@@ -79,16 +92,25 @@ export class SnovProvider implements IContactProvider {
     if (!token) {
       return {
         healthy: false,
+        authenticated: false,
+        canSearch: false,
+        status: 'auth_failed',
         provider: this.name,
         message: 'Snov.io authentication failed: unable to obtain OAuth token.',
+        authMessage: 'OAuth Token Failed',
+        nextAction: 'Verify your Snov User ID and Secret in Settings.',
         latencyMs: Date.now() - start,
       };
     }
 
     return {
       healthy: true,
+      authenticated: true,
+      canSearch: true,
+      status: 'operational',
       provider: this.name,
       message: 'Snov.io authenticated successfully via OAuth 2.0.',
+      authMessage: 'OAuth 2.0 Authenticated',
       latencyMs: Date.now() - start,
     };
   }

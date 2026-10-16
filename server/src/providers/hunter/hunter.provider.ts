@@ -17,8 +17,18 @@ export class HunterProvider implements IContactProvider {
   private apiKey: string;
   private baseUrl = 'https://api.hunter.io/v2';
 
+  private lastError: string | null = null;
+
   constructor(apiKey?: string) {
     this.apiKey = apiKey || process.env.HUNTER_API_KEY || '';
+  }
+
+  getLastError(): string | null {
+    return this.lastError;
+  }
+
+  clearLastError(): void {
+    this.lastError = null;
   }
 
   setApiKey(key: string) {
@@ -29,8 +39,12 @@ export class HunterProvider implements IContactProvider {
     if (!this.apiKey) {
       return {
         healthy: false,
+        authenticated: false,
+        canSearch: false,
+        status: 'missing_credentials',
         provider: this.name,
-        message: 'Hunter API key is missing or not configured',
+        message: 'Hunter API key is missing. Set HUNTER_API_KEY in .env or configure in Settings.',
+        nextAction: 'Set HUNTER_API_KEY in .env or Settings, or use CSV Import / Mock Simulator.',
       };
     }
 
@@ -44,8 +58,13 @@ export class HunterProvider implements IContactProvider {
       if (res.status === 401) {
         return {
           healthy: false,
+          authenticated: false,
+          canSearch: false,
+          status: 'auth_failed',
           provider: this.name,
-          message: 'Hunter authentication failed: invalid API key.',
+          message: 'Hunter authentication failed: invalid or expired API key (HTTP 401).',
+          authMessage: 'Invalid API Key',
+          nextAction: 'Verify and update your HUNTER_API_KEY in Settings or .env.',
           latencyMs: Date.now() - start,
         };
       }
@@ -53,16 +72,49 @@ export class HunterProvider implements IContactProvider {
       if (res.ok) {
         const body = (await res.json()) as any;
         const plan = body?.data?.plan_name || 'Active';
+
+        // Probe search endpoint to check for account restrictions
+        try {
+          const probe = await fetchWithRetry(`${this.baseUrl}/domain-search?domain=stripe.com&limit=1&api_key=${encodeURIComponent(this.apiKey)}`, {
+            method: 'GET',
+          });
+          if (probe.status === 429) {
+            const probeData = (await probe.json().catch(() => ({}))) as any;
+            const details = probeData?.errors?.[0]?.details || 'Your account was restricted. Please log in to Hunter for more information.';
+            return {
+              healthy: false,
+              authenticated: true,
+              canSearch: false,
+              status: 'account_restricted',
+              provider: this.name,
+              message: `API Key Valid, but Account is Restricted (HTTP 429): ${details}`,
+              authMessage: 'Valid API Key (Authenticated)',
+              restrictionReason: `Account Restriction: ${details}`,
+              nextAction: 'Log in to hunter.io to resolve account restriction, or use CSV Import / Official Web Fallback / Mock Simulator.',
+              latencyMs: Date.now() - start,
+            };
+          }
+        } catch {
+          // Probe error non-fatal if account check passed
+        }
+
         return {
           healthy: true,
+          authenticated: true,
+          canSearch: true,
+          status: 'operational',
           provider: this.name,
-          message: `Hunter connected successfully (${plan} plan).`,
+          message: `Hunter connected and operational (${plan} plan).`,
+          authMessage: 'Valid API Key (Authenticated)',
           latencyMs: Date.now() - start,
         };
       }
 
       return {
         healthy: false,
+        authenticated: false,
+        canSearch: false,
+        status: 'error',
         provider: this.name,
         message: `Hunter responded with HTTP ${res.status}`,
         latencyMs: Date.now() - start,
@@ -70,6 +122,9 @@ export class HunterProvider implements IContactProvider {
     } catch (err: any) {
       return {
         healthy: false,
+        authenticated: false,
+        canSearch: false,
+        status: 'error',
         provider: this.name,
         message: `Hunter network error: ${err.message}`,
         latencyMs: Date.now() - start,
@@ -112,14 +167,31 @@ export class HunterProvider implements IContactProvider {
    * Stage C: Search domain contacts from public web indexing
    */
   async searchDomainContacts(domain: string, _roles: string[]): Promise<ProviderContactResult[]> {
-    if (!this.apiKey) return [];
+    this.lastError = null;
+    if (!this.apiKey) {
+      this.lastError = 'Hunter API key missing';
+      return [];
+    }
 
     const url = `${this.baseUrl}/domain-search?domain=${encodeURIComponent(domain)}&type=personal&limit=25&api_key=${encodeURIComponent(this.apiKey)}`;
 
     try {
       const res = await fetchWithRetry(url, { method: 'GET' });
       if (!res.ok) {
-        logger.warn(`Hunter domain-search returned status ${res.status}`);
+        if (res.status === 429) {
+          try {
+            const probeData = (await res.json().catch(() => ({}))) as any;
+            const details = probeData?.errors?.[0]?.details || 'Your account was restricted. Log in to Hunter to resolve.';
+            this.lastError = `Hunter account restricted: ${details}`;
+          } catch {
+            this.lastError = 'Hunter account restricted (HTTP 429).';
+          }
+        } else if (res.status === 401) {
+          this.lastError = 'Hunter authentication failed: invalid API key.';
+        } else {
+          this.lastError = `Hunter domain-search returned status ${res.status}`;
+        }
+        logger.warn(`Hunter domain-search failed: ${this.lastError}`);
         return [];
       }
 
@@ -151,6 +223,7 @@ export class HunterProvider implements IContactProvider {
         };
       });
     } catch (err: any) {
+      this.lastError = `Hunter network error: ${err.message}`;
       logger.error('Hunter domain-search failed', { error: err.message });
       return [];
     }
@@ -164,7 +237,9 @@ export class HunterProvider implements IContactProvider {
    * Finds specific email when name and domain are known
    */
   async findEmail(domain: string, firstName: string, lastName: string): Promise<ProviderEmailResult> {
+    this.lastError = null;
     if (!this.apiKey) {
+      this.lastError = 'Hunter API key missing';
       return { found: false, status: 'unavailable' };
     }
 
@@ -173,6 +248,11 @@ export class HunterProvider implements IContactProvider {
     try {
       const res = await fetchWithRetry(url, { method: 'GET' });
       if (!res.ok) {
+        if (res.status === 429) {
+          this.lastError = 'Hunter account restricted (HTTP 429).';
+        } else {
+          this.lastError = `Hunter email-finder returned status ${res.status}`;
+        }
         return { found: false, status: 'unavailable' };
       }
 

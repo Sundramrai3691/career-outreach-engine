@@ -1,71 +1,56 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api.js';
+import { MultiSelectChips } from '../components/MultiSelectChips.js';
 import {
-  Plus,
-  Trash2,
-  FileSpreadsheet,
-  Clipboard,
-  Play,
+  Search,
+  Building,
+  Briefcase,
+  MapPin,
+  ChevronDown,
+  ChevronUp,
+  Sliders,
   AlertCircle,
-  ShieldCheck,
-  Check,
+  History,
+  Link as LinkIcon,
+  Upload,
 } from 'lucide-react';
-
-interface CompanyRow {
-  id: string;
-  name: string;
-  domain: string;
-  roles: string;
-  location: string;
-  jobUrl: string;
-  notes: string;
-}
 
 interface NewDiscoveryProps {
   onRunStarted: (runId: string) => void;
+  onViewHistory?: () => void;
+  onNavigateToContacts?: () => void;
 }
 
-export const NewDiscovery: React.FC<NewDiscoveryProps> = ({ onRunStarted }) => {
-  const [globalRoles, setGlobalRoles] = useState('Technical Recruiter, University Recruiter, Engineering Manager');
-  const [rows, setRows] = useState<CompanyRow[]>([
-    {
-      id: '1',
-      name: 'Stripe',
-      domain: 'stripe.com',
-      roles: '',
-      location: 'San Francisco, CA',
-      jobUrl: 'https://stripe.com/jobs',
-      notes: '',
-    },
-    {
-      id: '2',
-      name: 'Datadog',
-      domain: 'datadoghq.com',
-      roles: '',
-      location: 'New York, NY',
-      jobUrl: '',
-      notes: '',
-    },
-    {
-      id: '3',
-      name: 'Vercel',
-      domain: 'vercel.com',
-      roles: 'Recruiter, Talent Partner',
-      location: '',
-      jobUrl: '',
-      notes: '',
-    },
+export const NewDiscovery: React.FC<NewDiscoveryProps> = ({
+  onRunStarted,
+  onViewHistory,
+  onNavigateToContacts,
+}) => {
+  // LinkedIn-style multi-select search states
+  const [companies, setCompanies] = useState<string[]>(['Stripe', 'Datadog']);
+  const [roles, setRoles] = useState<string[]>([
+    'Technical Recruiter',
+    'Senior Technical Recruiter',
+    'Engineering Manager',
   ]);
+  const [locations, setLocations] = useState<string[]>(['San Francisco, CA']);
+  const [jobUrl, setJobUrl] = useState('');
+  const [notes, setNotes] = useState('');
 
-  // Waterfall & Budget settings
+  // Advanced Waterfall & Budget Settings (collapsed by default)
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [maxBudget, setMaxBudget] = useState(25);
   const [allowEnrichment, setAllowEnrichment] = useState(false);
   const [freeFirstMode, setFreeFirstMode] = useState(true);
   const [verifyEmails, setVerifyEmails] = useState(true);
-  const [pasteModalOpen, setPasteModalOpen] = useState(false);
-  const [pasteText, setPasteText] = useState('');
+  const [providerPriority, setProviderPriority] = useState<('apollo' | 'hunter' | 'snov' | 'mock')[]>([
+    'apollo',
+    'hunter',
+    'snov',
+  ]);
+  const [enableMockSimulation, setEnableMockSimulation] = useState(false);
 
-  // Live Cost Estimate
+  // Live Cost Estimate & submission states
   const [estimate, setEstimate] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,10 +58,14 @@ export const NewDiscovery: React.FC<NewDiscoveryProps> = ({ onRunStarted }) => {
   // Recalculate cost estimate when parameters change
   useEffect(() => {
     const fetchEstimate = async () => {
+      if (companies.length === 0) {
+        setEstimate(null);
+        return;
+      }
       try {
         const est = await api.estimateDiscovery({
-          companiesCount: rows.length,
-          rolesCount: globalRoles.split(',').length,
+          companiesCount: companies.length,
+          rolesCount: roles.length || 1,
           allowEnrichment,
           freeFirstMode,
           verifyEmails,
@@ -88,183 +77,126 @@ export const NewDiscovery: React.FC<NewDiscoveryProps> = ({ onRunStarted }) => {
       }
     };
     fetchEstimate();
-  }, [rows.length, globalRoles, allowEnrichment, freeFirstMode, verifyEmails, maxBudget]);
+  }, [companies.length, roles.length, allowEnrichment, freeFirstMode, verifyEmails, maxBudget]);
 
-  const addRow = () => {
-    const newId = String(Date.now());
-    setRows([
-      ...rows,
-      {
-        id: newId,
-        name: '',
-        domain: '',
-        roles: '',
-        location: '',
-        jobUrl: '',
-        notes: '',
-      },
-    ]);
-  };
-
-  const removeRow = (id: string) => {
-    if (rows.length === 1) return;
-    setRows(rows.filter((r) => r.id !== id));
-  };
-
-  const updateRow = (id: string, field: keyof CompanyRow, value: string) => {
-    setRows(
-      rows.map((r) => (r.id === id ? { ...r, [field]: value } : r))
-    );
-  };
-
-  const handleBulkPaste = () => {
-    if (!pasteText.trim()) return;
-
-    const lines = pasteText.split('\n');
-    const newRows: CompanyRow[] = [];
-
-    lines.forEach((line, index) => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
-
-      // Handle tab-separated or comma-separated
-      const parts = trimmed.includes('\t') ? trimmed.split('\t') : trimmed.split(',');
-      const name = parts[0]?.trim() || '';
-      const domain = parts[1]?.trim() || '';
-      const roles = parts[2]?.trim() || '';
-
-      if (name) {
-        newRows.push({
-          id: `${Date.now()}-${index}`,
-          name,
-          domain,
-          roles,
-          location: '',
-          jobUrl: '',
-          notes: '',
-        });
+  const handleToggleMock = (checked: boolean) => {
+    setEnableMockSimulation(checked);
+    if (checked) {
+      if (!providerPriority.includes('mock')) {
+        setProviderPriority(['mock', ...providerPriority]);
       }
-    });
-
-    if (newRows.length > 0) {
-      setRows(newRows);
-      setPasteModalOpen(false);
-      setPasteText('');
+    } else {
+      setProviderPriority(providerPriority.filter((p) => p !== 'mock'));
     }
   };
 
-  const handleCsvImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      if (!content) return;
-
-      const lines = content.split('\n');
-      const parsedRows: CompanyRow[] = [];
-
-      lines.slice(1).forEach((line, index) => {
-        const parts = line.split(',');
-        if (parts[0] && parts[0].trim()) {
-          parsedRows.push({
-            id: `${Date.now()}-${index}`,
-            name: parts[0].trim(),
-            domain: parts[1]?.trim() || '',
-            roles: parts[2]?.trim() || '',
-            location: parts[3]?.trim() || '',
-            jobUrl: parts[4]?.trim() || '',
-            notes: '',
-          });
-        }
-      });
-
-      if (parsedRows.length > 0) {
-        setRows(parsedRows);
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const handleStartDiscovery = async () => {
+  const handleStartDiscovery = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setError(null);
 
-    // Validate inputs
-    const invalidRow = rows.find((r) => !r.name.trim());
-    if (invalidRow) {
-      setError('Please provide a company name for every row.');
+    if (companies.length === 0) {
+      setError('Please add at least one target company.');
       return;
     }
 
-    const defaultRolesList = globalRoles
-      .split(',')
-      .map((r) => r.trim())
-      .filter(Boolean);
-
-    if (defaultRolesList.length === 0) {
-      setError('At least one global target role is required.');
+    if (roles.length === 0) {
+      setError('Please specify at least one target role (e.g. Technical Recruiter).');
       return;
     }
-
-    const companiesPayload = rows.map((r) => {
-      const companyRoles = r.roles
-        ? r.roles
-            .split(',')
-            .map((role) => role.trim())
-            .filter(Boolean)
-        : defaultRolesList;
-
-      return {
-        name: r.name.trim(),
-        domain: r.domain ? r.domain.trim() : undefined,
-        targetRoles: companyRoles.length > 0 ? companyRoles : defaultRolesList,
-        location: r.location ? r.location.trim() : undefined,
-        jobUrl: r.jobUrl ? r.jobUrl.trim() : undefined,
-        notes: r.notes ? r.notes.trim() : undefined,
-      };
-    });
 
     try {
       setIsSubmitting(true);
-      const res = await api.startDiscovery({
-        companies: companiesPayload,
+
+      const payload = {
+        companies: companies.map((name) => ({
+          name,
+          targetRoles: roles,
+          location: locations.length > 0 ? locations.join(', ') : undefined,
+          jobUrl: jobUrl.trim() || undefined,
+          notes: notes.trim() || undefined,
+        })),
         config: {
-          maxBudget,
+          maxBudget: Number(maxBudget) || 25,
           allowEnrichment,
           freeFirstMode,
           verifyEmails,
+          providerPriority,
         },
-      });
+      };
 
+      const res = await api.startDiscovery(payload);
       if (res.runId) {
         onRunStarted(res.runId);
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to start discovery run');
+      setError(err.message || 'Failed to start discovery run.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const addCompanyPreset = (name: string) => {
+    if (!companies.includes(name)) {
+      setCompanies([...companies, name]);
+    }
+  };
+
+  const addRolePreset = (role: string) => {
+    if (!roles.includes(role)) {
+      setRoles([...roles, role]);
+    }
+  };
+
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+    <div style={{ maxWidth: '860px', margin: '0 auto' }}>
+      {/* Page Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.75rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h2>Target Discovery Setup</h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Enter your target companies and roles. The waterfall will search Apollo, Hunter, and verified sources.
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+            <h2>Discover Contacts</h2>
+            <span
+              style={{
+                fontSize: '0.6875rem',
+                fontWeight: 600,
+                padding: '0.2rem 0.5rem',
+                background: 'rgba(99, 102, 241, 0.15)',
+                border: '1px solid rgba(99, 102, 241, 0.3)',
+                borderRadius: 'var(--radius-full)',
+                color: '#818cf8',
+              }}
+            >
+              Multi-Target Pipeline
+            </span>
+          </div>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+            Find recruiters and hiring managers across multiple target companies with verified direct emails.
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <button className="btn btn-secondary btn-sm" onClick={() => setPasteModalOpen(true)}>
-            <Clipboard size={14} /> Paste Multiple
-          </button>
-          <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
-            <FileSpreadsheet size={14} /> Import CSV
-            <input type="file" accept=".csv" onChange={handleCsvImport} style={{ display: 'none' }} />
-          </label>
+        <div style={{ display: 'flex', gap: '0.625rem' }}>
+          {onNavigateToContacts && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={onNavigateToContacts}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}
+            >
+              <Upload size={14} />
+              <span>Import CSV Fallback</span>
+            </button>
+          )}
+
+          {onViewHistory && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={onViewHistory}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}
+            >
+              <History size={14} />
+              <span>Discovery History</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -277,10 +209,10 @@ export const NewDiscovery: React.FC<NewDiscoveryProps> = ({ onRunStarted }) => {
             borderRadius: 'var(--radius-md)',
             color: '#fca5a5',
             marginBottom: '1.5rem',
+            fontSize: '0.875rem',
             display: 'flex',
             alignItems: 'center',
-            gap: '0.5rem',
-            fontSize: '0.875rem',
+            gap: '0.625rem',
           }}
         >
           <AlertCircle size={18} />
@@ -288,239 +220,337 @@ export const NewDiscovery: React.FC<NewDiscoveryProps> = ({ onRunStarted }) => {
         </div>
       )}
 
-      {/* Global Target Roles Setting */}
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span>Default Target Roles (applied to all companies unless overridden)</span>
-            <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Comma separated</span>
-          </label>
-          <input
-            type="text"
-            className="form-input"
-            value={globalRoles}
-            onChange={(e) => setGlobalRoles(e.target.value)}
-            placeholder="e.g. Technical Recruiter, University Recruiter, Engineering Manager"
-          />
-        </div>
-      </div>
-
-      {/* Dynamic Target Companies Table */}
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h3 style={{ fontSize: '1rem' }}>Target Companies ({rows.length})</h3>
-          <button className="btn btn-secondary btn-sm" onClick={addRow}>
-            <Plus size={14} /> Add Company
-          </button>
-        </div>
-
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th style={{ width: '22%' }}>Company Name *</th>
-                <th style={{ width: '18%' }}>Domain</th>
-                <th style={{ width: '25%' }}>Override Roles</th>
-                <th style={{ width: '15%' }}>Location</th>
-                <th style={{ width: '15%' }}>Job URL</th>
-                <th style={{ width: '5%' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id}>
-                  <td>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={row.name}
-                      onChange={(e) => updateRow(row.id, 'name', e.target.value)}
-                      placeholder="e.g. Stripe"
-                      style={{ padding: '0.375rem 0.625rem', fontSize: '0.8125rem' }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={row.domain}
-                      onChange={(e) => updateRow(row.id, 'domain', e.target.value)}
-                      placeholder="stripe.com"
-                      style={{ padding: '0.375rem 0.625rem', fontSize: '0.8125rem' }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={row.roles}
-                      onChange={(e) => updateRow(row.id, 'roles', e.target.value)}
-                      placeholder="Uses global default"
-                      style={{ padding: '0.375rem 0.625rem', fontSize: '0.8125rem' }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={row.location}
-                      onChange={(e) => updateRow(row.id, 'location', e.target.value)}
-                      placeholder="e.g. Remote"
-                      style={{ padding: '0.375rem 0.625rem', fontSize: '0.8125rem' }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={row.jobUrl}
-                      onChange={(e) => updateRow(row.id, 'jobUrl', e.target.value)}
-                      placeholder="https://..."
-                      style={{ padding: '0.375rem 0.625rem', fontSize: '0.8125rem' }}
-                    />
-                  </td>
-                  <td style={{ textAlign: 'center' }}>
-                    <button
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => removeRow(row.id)}
-                      disabled={rows.length === 1}
-                      title="Remove row"
-                      style={{ padding: '0.375rem', borderRadius: 'var(--radius-sm)' }}
-                    >
-                      <Trash2 size={14} color="#f87171" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Credit & Budget Protection Config */}
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <h3 style={{ fontSize: '1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <ShieldCheck size={18} color="#6366f1" /> Waterfall & Credit Budget Protection
-        </h3>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.25rem' }}>
-          <div>
-            <label className="form-label">Run Credit Spending Cap</label>
-            <input
-              type="number"
-              className="form-input"
-              value={maxBudget}
-              onChange={(e) => setMaxBudget(Number(e.target.value))}
-              min={0}
-              max={500}
+      {/* Main Search Panel Card */}
+      <form onSubmit={handleStartDiscovery}>
+        <div
+          className="card"
+          style={{
+            background: 'linear-gradient(145deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.8) 100%)',
+            border: '1px solid rgba(99, 102, 241, 0.25)',
+            boxShadow: '0 10px 30px -10px rgba(0, 0, 0, 0.4)',
+            padding: '1.75rem',
+            marginBottom: '1.5rem',
+          }}
+        >
+          {/* 1. Target Companies */}
+          <div style={{ marginBottom: '1.5rem' }}>
+            <MultiSelectChips
+              id="companies-chips"
+              label="Target Companies"
+              icon={<Building size={16} color="#818cf8" />}
+              placeholder="Search or enter companies (e.g. Stripe, Airbnb, Google)..."
+              type="companies"
+              selected={companies}
+              onChange={setCompanies}
+              helperText="Press Enter or Comma to add. Suggestions automatically populate from your database & curated lists."
             />
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Discovery halts immediately if spending reaches this cap.
-            </span>
+
+            {/* Quick Presets */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>Quick add:</span>
+              {['Stripe', 'Google', 'Datadog', 'OpenAI', 'Airbnb', 'Figma'].map((comp) => (
+                <button
+                  key={comp}
+                  type="button"
+                  onClick={() => addCompanyPreset(comp)}
+                  style={{
+                    fontSize: '0.6875rem',
+                    padding: '0.15rem 0.5rem',
+                    borderRadius: 'var(--radius-full)',
+                    background: companies.includes(comp) ? 'rgba(99, 102, 241, 0.3)' : 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    color: companies.includes(comp) ? '#c7d2fe' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  +{comp}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', justifyContent: 'center' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-              <input
-                type="checkbox"
-                checked={freeFirstMode}
-                onChange={(e) => setFreeFirstMode(e.target.checked)}
-                style={{ width: '16px', height: '16px', accentColor: '#6366f1' }}
-              />
-              <span><strong>Free-first mode</strong> (prioritizes 0-credit Apollo & free searches)</span>
-            </label>
+          {/* 2. Target Roles */}
+          <div style={{ marginBottom: '1.5rem' }}>
+            <MultiSelectChips
+              id="roles-chips"
+              label="Target Roles & Job Titles"
+              icon={<Briefcase size={16} color="#10b981" />}
+              placeholder="Search or enter job titles (e.g. Technical Recruiter, Engineering Manager)..."
+              type="roles"
+              selected={roles}
+              onChange={setRoles}
+              helperText="Roles apply to all selected companies. You can add recruiters, talent managers, or team leads."
+            />
 
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-              <input
-                type="checkbox"
-                checked={allowEnrichment}
-                onChange={(e) => setAllowEnrichment(e.target.checked)}
-                style={{ width: '16px', height: '16px', accentColor: '#6366f1' }}
-              />
-              <span><strong>Permit paid enrichment</strong> (allows Apollo bulk match when needed)</span>
-            </label>
+            {/* Role Presets */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+              <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>Common roles:</span>
+              {[
+                'Technical Recruiter',
+                'Head of Talent Acquisition',
+                'Engineering Manager',
+                'Director of Engineering',
+              ].map((role) => (
+                <button
+                  key={role}
+                  type="button"
+                  onClick={() => addRolePreset(role)}
+                  style={{
+                    fontSize: '0.6875rem',
+                    padding: '0.15rem 0.5rem',
+                    borderRadius: 'var(--radius-full)',
+                    background: roles.includes(role) ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    color: roles.includes(role) ? '#6ee7b7' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  +{role}
+                </button>
+              ))}
+            </div>
+          </div>
 
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+          {/* 3. Target Locations (Optional) */}
+          <div style={{ marginBottom: '1.5rem' }}>
+            <MultiSelectChips
+              id="locations-chips"
+              label="Locations (Optional)"
+              icon={<MapPin size={16} color="#f59e0b" />}
+              placeholder="Filter by location (e.g. San Francisco, CA, Remote)..."
+              type="locations"
+              selected={locations}
+              onChange={setLocations}
+              helperText="Leave empty to search globally across all office locations."
+            />
+          </div>
+
+          {/* Optional Job URL and Notes */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '0.5rem' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                <LinkIcon size={14} color="var(--text-muted)" />
+                Target Job Listing URL (Optional)
+              </label>
               <input
-                type="checkbox"
-                checked={verifyEmails}
-                onChange={(e) => setVerifyEmails(e.target.checked)}
-                style={{ width: '16px', height: '16px', accentColor: '#6366f1' }}
+                type="url"
+                className="form-input"
+                value={jobUrl}
+                onChange={(e) => setJobUrl(e.target.value)}
+                placeholder="https://company.com/careers/job-id"
               />
-              <span><strong>Perform email verification</strong> (DNS MX & SMTP validity checks)</span>
-            </label>
+            </div>
+
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Reference Notes (Optional)</label>
+              <input
+                type="text"
+                className="form-input"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="e.g. Q4 Outreach batch"
+              />
+            </div>
           </div>
         </div>
 
-        {/* Live Estimation Box */}
-        {estimate && (
+        {/* Collapsible Advanced Options Accordion */}
+        <div
+          className="card"
+          style={{
+            background: 'rgba(30, 41, 59, 0.4)',
+            border: '1px solid var(--border-color)',
+            padding: '1.25rem',
+            marginBottom: '1.5rem',
+          }}
+        >
           <div
+            onClick={() => setAdvancedOpen(!advancedOpen)}
             style={{
-              marginTop: '1.25rem',
-              padding: '0.875rem 1rem',
-              background: 'rgba(99, 102, 241, 0.08)',
-              border: '1px solid rgba(99, 102, 241, 0.2)',
-              borderRadius: 'var(--radius-md)',
               display: 'flex',
-              alignItems: 'center',
               justifyContent: 'space-between',
-              fontSize: '0.875rem',
+              alignItems: 'center',
+              cursor: 'pointer',
+              userSelect: 'none',
             }}
           >
-            <div>
-              <strong>Estimated Credit Usage:</strong> {estimate.estimatedCostMin} – {estimate.estimatedCostMax} credits
-              {freeFirstMode && !allowEnrichment && (
-                <span style={{ color: '#6ee7b7', marginLeft: '0.5rem' }}>✓ Zero export credits consumed</span>
-              )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Sliders size={16} color="#818cf8" />
+              <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>Advanced Pipeline Options & Provider Priority</span>
             </div>
-
-            {estimate.warnings?.length > 0 && (
-              <span style={{ color: '#fcd34d', fontSize: '0.75rem' }}>
-                {estimate.warnings[0]}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)' }}>
+              <span style={{ fontSize: '0.75rem' }}>
+                {advancedOpen ? 'Hide' : 'Show options (Free-first, budget, simulator)'}
               </span>
-            )}
+              {advancedOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </div>
           </div>
-        )}
-      </div>
 
-      {/* Launch Action */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', alignItems: 'center' }}>
-        <button
-          className="btn btn-primary"
-          style={{ padding: '0.75rem 2rem', fontSize: '1rem' }}
-          onClick={handleStartDiscovery}
-          disabled={isSubmitting || (estimate && !estimate.canProceed)}
+          {advancedOpen && (
+            <div style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem' }}>
+                {/* Free First Mode */}
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginBottom: '0.25rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={freeFirstMode}
+                      onChange={(e) => setFreeFirstMode(e.target.checked)}
+                    />
+                    <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>Free-First Mode</span>
+                  </label>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0, paddingLeft: '1.5rem' }}>
+                    Exhaust zero-credit people search before consuming paid credits.
+                  </p>
+                </div>
+
+                {/* Email Verification */}
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginBottom: '0.25rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={verifyEmails}
+                      onChange={(e) => setVerifyEmails(e.target.checked)}
+                    />
+                    <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>Verify Deliverability</span>
+                  </label>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0, paddingLeft: '1.5rem' }}>
+                    Run SMTP & MX deliverability checks to protect sender reputation.
+                  </p>
+                </div>
+
+                {/* Allow Enrichment */}
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginBottom: '0.25rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={allowEnrichment}
+                      onChange={(e) => setAllowEnrichment(e.target.checked)}
+                    />
+                    <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>Allow Paid Enrichment</span>
+                  </label>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0, paddingLeft: '1.5rem' }}>
+                    Use Apollo credit enrichment if standard discovery does not return email.
+                  </p>
+                </div>
+
+                {/* Mock Simulator Mode */}
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginBottom: '0.25rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={enableMockSimulation}
+                      onChange={(e) => handleToggleMock(e.target.checked)}
+                    />
+                    <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#f59e0b' }}>
+                      Mock Simulator Mode
+                    </span>
+                  </label>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0, paddingLeft: '1.5rem' }}>
+                    Simulate discovery for demo/testing without consuming real provider quotas.
+                  </p>
+                </div>
+              </div>
+
+              {/* Max Budget */}
+              <div style={{ marginTop: '1.25rem', maxWidth: '300px' }}>
+                <label className="form-label" style={{ fontSize: '0.8125rem' }}>
+                  Max Credits Budget per Run: <strong>{maxBudget}</strong>
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={maxBudget}
+                  onChange={(e) => setMaxBudget(Number(e.target.value))}
+                  style={{ width: '100%' }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Action & Cost Estimation Footer */}
+        <div
+          className="card"
+          style={{
+            background: 'linear-gradient(135deg, rgba(22, 29, 44, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%)',
+            border: '1px solid rgba(99, 102, 241, 0.3)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '1.25rem',
+            padding: '1.25rem 1.75rem',
+          }}
         >
-          <Play size={18} />
-          <span>{isSubmitting ? 'Starting Waterfall...' : 'Find Contacts'}</span>
-        </button>
-      </div>
-
-      {/* Paste Modal */}
-      {pasteModalOpen && (
-        <div className="modal-overlay" onClick={() => setPasteModalOpen(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Paste Multiple Targets</h3>
-              <button className="btn btn-secondary btn-sm" onClick={() => setPasteModalOpen(false)}>✕</button>
+          {/* Summary Details */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <span style={{ fontSize: '0.9375rem', fontWeight: 600 }}>
+                {companies.length} {companies.length === 1 ? 'Company' : 'Companies'}
+              </span>
+              <span style={{ color: 'var(--text-muted)' }}>•</span>
+              <span style={{ fontSize: '0.9375rem', fontWeight: 600 }}>
+                {roles.length} {roles.length === 1 ? 'Target Role' : 'Target Roles'}
+              </span>
             </div>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem', marginBottom: '1rem' }}>
-              Paste lines from spreadsheets or text. Supported format: <code>Company Name, Domain, Roles</code> or one company name per line.
-            </p>
-            <textarea
-              className="form-textarea"
-              rows={8}
-              value={pasteText}
-              onChange={(e) => setPasteText(e.target.value)}
-              placeholder="Stripe, stripe.com, Recruiter&#10;Datadog, datadoghq.com&#10;Vercel, vercel.com, Talent Partner"
-            />
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setPasteModalOpen(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleBulkPaste}>
-                <Check size={16} /> Import Parsed Lines
-              </button>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+              Estimated cost:{' '}
+              <strong style={{ color: '#10b981' }}>
+                {estimate?.estimatedCredits ? `${estimate.estimatedCredits} credits` : '0 credits (Free-First)'}
+              </strong>
+              {freeFirstMode && ' • Prioritizes free queries'}
             </div>
           </div>
+
+          {/* Big Launch CTA */}
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={isSubmitting || companies.length === 0 || roles.length === 0}
+            style={{
+              padding: '0.75rem 1.75rem',
+              fontSize: '0.9375rem',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+            }}
+          >
+            {isSubmitting ? (
+              <>
+                <span className="spinner" />
+                <span>Launching Discovery...</span>
+              </>
+            ) : (
+              <>
+                <Search size={18} />
+                <span>Find Contacts ({companies.length})</span>
+              </>
+            )}
+          </button>
+        </div>
+      </form>
+
+      {onNavigateToContacts && (
+        <div style={{ textAlign: 'center', marginTop: '1.25rem', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+          Have an existing lead list or blocked by provider search tiers?{' '}
+          <button
+            type="button"
+            onClick={onNavigateToContacts}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#818cf8',
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              padding: 0,
+              fontSize: '0.8125rem',
+            }}
+          >
+            Import contacts directly from CSV fallback
+          </button>
         </div>
       )}
     </div>

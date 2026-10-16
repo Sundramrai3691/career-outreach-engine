@@ -13,11 +13,21 @@ import {
 export class MockProvider implements IContactProvider {
   readonly name: ProviderName = 'mock';
 
+  getLastError(): string | null {
+    return null;
+  }
+
+  clearLastError(): void {}
+
   async healthCheck(): Promise<ProviderHealthResult> {
     return {
       healthy: true,
+      authenticated: true,
+      canSearch: true,
+      status: 'operational',
       provider: this.name,
       message: 'Mock Provider operational (Simulation / Demo / Test mode).',
+      authMessage: 'Simulation Active',
       latencyMs: 12,
     };
   }

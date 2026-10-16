@@ -13,6 +13,16 @@ export interface IContactProvider {
   readonly name: ProviderName;
 
   /**
+   * Returns the most recent error message from this provider, if any
+   */
+  getLastError(): string | null;
+
+  /**
+   * Clears the most recent error
+   */
+  clearLastError(): void;
+
+  /**
    * Performs connectivity and authentication validation
    */
   healthCheck(): Promise<ProviderHealthResult>;

@@ -17,8 +17,18 @@ export class ApolloProvider implements IContactProvider {
   private apiKey: string;
   private baseUrl = 'https://api.apollo.io';
 
+  private lastError: string | null = null;
+
   constructor(apiKey?: string) {
     this.apiKey = apiKey || process.env.APOLLO_API_KEY || '';
+  }
+
+  getLastError(): string | null {
+    return this.lastError;
+  }
+
+  clearLastError(): void {
+    this.lastError = null;
   }
 
   setApiKey(key: string) {
@@ -29,15 +39,18 @@ export class ApolloProvider implements IContactProvider {
     if (!this.apiKey) {
       return {
         healthy: false,
+        authenticated: false,
+        canSearch: false,
+        status: 'missing_credentials',
         provider: this.name,
-        message: 'Apollo API key is missing or not configured',
+        message: 'Apollo API key is missing. Set APOLLO_API_KEY in .env or configure in Settings.',
+        nextAction: 'Set APOLLO_API_KEY in .env or Settings, or use CSV Import / Mock Simulator.',
       };
     }
 
     const start = Date.now();
     try {
-      // Test authentication via user info or ping
-      const res = await fetchWithRetry(`${this.baseUrl}/v1/users/me`, {
+      const res = await fetchWithRetry(`${this.baseUrl}/v1/auth/health`, {
         method: 'GET',
         headers: {
           'X-Api-Key': this.apiKey,
@@ -48,23 +61,63 @@ export class ApolloProvider implements IContactProvider {
       if (res.status === 401 || res.status === 403) {
         return {
           healthy: false,
+          authenticated: false,
+          canSearch: false,
+          status: 'auth_failed',
           provider: this.name,
-          message: 'Apollo authentication failed. Invalid or expired API key.',
+          message: 'Apollo authentication failed: invalid or expired API key (HTTP ' + res.status + ').',
+          authMessage: 'Invalid API Key',
+          nextAction: 'Verify and update your APOLLO_API_KEY in Settings or .env.',
           latencyMs: Date.now() - start,
         };
       }
 
       if (res.ok) {
+        // Step 2: Probe whether the account has search API access
+        try {
+          const probe = await fetchWithRetry(`${this.baseUrl}/api/v1/mixed_people/api_search?per_page=1`, {
+            method: 'POST',
+            headers: {
+              'X-Api-Key': this.apiKey,
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (probe.status === 403) {
+            return {
+              healthy: false,
+              authenticated: true,
+              canSearch: false,
+              status: 'authenticated_restricted',
+              provider: this.name,
+              message: 'API Key Valid, but People Search is Restricted (HTTP 403): Apollo Free plan does not include Search API access.',
+              authMessage: 'Valid API Key (Authenticated)',
+              restrictionReason: 'Endpoint Forbidden: Free plan accounts are not authorized to use /api/v1/mixed_people/api_search.',
+              nextAction: 'Upgrade to a paid Apollo plan, or use CSV Import / Official Web Fallback / Mock Simulator.',
+              latencyMs: Date.now() - start,
+            };
+          }
+        } catch {
+          // Probe error non-fatal if auth passed
+        }
+
         return {
           healthy: true,
+          authenticated: true,
+          canSearch: true,
+          status: 'operational',
           provider: this.name,
-          message: 'Apollo connection successful and authenticated.',
+          message: 'Apollo authenticated and People Search is operational.',
+          authMessage: 'Valid API Key (Authenticated)',
           latencyMs: Date.now() - start,
         };
       }
 
       return {
         healthy: false,
+        authenticated: false,
+        canSearch: false,
+        status: 'error',
         provider: this.name,
         message: `Apollo responded with status ${res.status}: ${res.statusText}`,
         latencyMs: Date.now() - start,
@@ -72,6 +125,9 @@ export class ApolloProvider implements IContactProvider {
     } catch (err: any) {
       return {
         healthy: false,
+        authenticated: false,
+        canSearch: false,
+        status: 'error',
         provider: this.name,
         message: `Apollo network error: ${err.message}`,
         latencyMs: Date.now() - start,
@@ -114,7 +170,9 @@ export class ApolloProvider implements IContactProvider {
    * Discovers matching people matching domain and job titles
    */
   async searchPeople(domain: string, roles: string[]): Promise<ProviderPersonResult[]> {
+    this.lastError = null;
     if (!this.apiKey) {
+      this.lastError = 'Apollo API key missing';
       logger.warn('Apollo searchPeople called without API key');
       return [];
     }
@@ -139,8 +197,23 @@ export class ApolloProvider implements IContactProvider {
       });
 
       if (!res.ok) {
-        const errorText = await res.text();
-        logger.error(`Apollo api_search returned ${res.status}`, { errorText });
+        let errorMsg = `Apollo search returned status ${res.status}`;
+        try {
+          const errData = (await res.json()) as any;
+          if (errData?.error) {
+            errorMsg = errData.error;
+          }
+        } catch {
+          // ignore json parse error
+        }
+
+        if (res.status === 403) {
+          this.lastError = 'Apollo Free plan does not include Search API access (paid Apollo plan required).';
+        } else {
+          this.lastError = errorMsg;
+        }
+
+        logger.warn(`Apollo searchPeople failed: ${this.lastError}`);
         return [];
       }
 
@@ -159,6 +232,7 @@ export class ApolloProvider implements IContactProvider {
         headline: p.headline,
       }));
     } catch (err: any) {
+      this.lastError = `Apollo network error: ${err.message}`;
       logger.error('Apollo searchPeople network failure', { message: err.message });
       return [];
     }

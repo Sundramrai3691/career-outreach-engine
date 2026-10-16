@@ -45,8 +45,10 @@ export function createGoogleRouter(
     try {
       const { code, state, error } = req.query as Record<string, string>;
 
+      const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5174';
+
       if (error) {
-        return res.redirect(`${process.env.CLIENT_ORIGIN || 'http://localhost:5173'}/settings?google_error=${encodeURIComponent(error)}`);
+        return res.redirect(`${clientOrigin}/settings?google_error=${encodeURIComponent(error)}`);
       }
 
       if (!code || !state) {
@@ -54,10 +56,11 @@ export function createGoogleRouter(
       }
 
       await authService.handleCallback(code, state);
-      res.redirect(`${process.env.CLIENT_ORIGIN || 'http://localhost:5173'}/settings?google_success=true`);
+      res.redirect(`${clientOrigin}/settings?google_success=true`);
     } catch (err: any) {
+      const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5174';
       res.redirect(
-        `${process.env.CLIENT_ORIGIN || 'http://localhost:5173'}/settings?google_error=${encodeURIComponent(err.message)}`
+        `${clientOrigin}/settings?google_error=${encodeURIComponent(err.message)}`
       );
     }
   });

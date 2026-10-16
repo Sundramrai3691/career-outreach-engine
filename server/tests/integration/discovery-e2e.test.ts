@@ -58,13 +58,13 @@ describe('Discovery Pipeline End-to-End Flow', () => {
         where: { id: runId },
         include: { items: true },
       });
-      if (run && (run.status === 'completed' || run.status === 'failed')) {
+      if (run && (run.status === 'completed' || run.status === 'completed_with_results' || run.status === 'failed')) {
         break;
       }
     }
 
     expect(run).toBeDefined();
-    expect(run?.status).toBe('completed');
+    expect(['completed', 'completed_with_results']).toContain(run?.status);
     expect(run?.totalCompanies).toBe(3);
     expect(run?.processedCompanies).toBe(3);
     expect(run?.contactsFound).toBeGreaterThan(0);

@@ -2,10 +2,37 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { stringify } from 'csv-stringify/sync';
 import { SuppressionService } from '../services/suppression.service.js';
+import { ContactImportService } from '../services/contact-import/import.service.js';
 
 export function createContactsRouter(prisma: PrismaClient): Router {
   const router = Router();
   const suppressionService = new SuppressionService(prisma);
+  const importService = new ContactImportService(prisma);
+
+  /**
+   * Import contacts via CSV with validation, deduplication, and provenance tracking
+   */
+  router.post('/import', async (req, res, next) => {
+    try {
+      const csvContent =
+        typeof req.body === 'string'
+          ? req.body
+          : req.body?.csvContent || req.body?.csv;
+
+      const fileName = req.body?.fileName || 'manual_import.csv';
+
+      if (!csvContent || typeof csvContent !== 'string') {
+        return res.status(400).json({
+          error: 'Missing required "csvContent" string in request body.',
+        });
+      }
+
+      const result = await importService.importCsv(csvContent, fileName);
+      res.status(201).json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
 
   /**
    * List contacts with search, filters, sorting, and pagination

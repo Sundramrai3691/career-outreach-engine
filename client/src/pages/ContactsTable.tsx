@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { api } from '../services/api.js';
 import {
   Search,
@@ -11,6 +11,10 @@ import {
   CheckSquare,
   Square,
   Slash,
+  Upload,
+  FileText,
+  CheckCircle,
+  AlertCircle,
 } from 'lucide-react';
 
 interface ContactsTableProps {
@@ -31,6 +35,15 @@ export const ContactsTable: React.FC<ContactsTableProps> = ({ onPrepareMailMerge
 
   // Contact details modal
   const [activeContact, setActiveContact] = useState<any | null>(null);
+
+  // CSV Import Modal states
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importCsvText, setImportCsvText] = useState('');
+  const [importFileName, setImportFileName] = useState('');
+  const [importLoading, setImportLoading] = useState(false);
+  const [importResult, setImportResult] = useState<any | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadContacts(1);
@@ -81,6 +94,52 @@ export const ContactsTable: React.FC<ContactsTableProps> = ({ onPrepareMailMerge
     }
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      setImportCsvText(content);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleExecuteImport = async () => {
+    if (!importCsvText.trim()) {
+      setImportError('Please select a CSV file or paste CSV content.');
+      return;
+    }
+    try {
+      setImportLoading(true);
+      setImportError(null);
+      const res = await api.importContactsCsv(importCsvText, importFileName || 'manual_import.csv');
+      setImportResult(res);
+
+      // Auto-select imported contacts
+      if (res.contacts && res.contacts.length > 0) {
+        const newIds = new Set(selectedIds);
+        res.contacts.forEach((c: any) => newIds.add(c.id));
+        setSelectedIds(newIds);
+      }
+
+      await loadContacts(1);
+    } catch (err: any) {
+      setImportError(err.message || 'Import failed. Check CSV syntax and required columns.');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleCloseImport = () => {
+    setShowImportModal(false);
+    setImportCsvText('');
+    setImportFileName('');
+    setImportResult(null);
+    setImportError(null);
+  };
+
   const handleSuppress = async (email: string) => {
     if (!confirm(`Are you sure you want to add ${email} to the suppression list?`)) return;
     try {
@@ -97,11 +156,18 @@ export const ContactsTable: React.FC<ContactsTableProps> = ({ onPrepareMailMerge
         <div>
           <h2>Discovered Contacts</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Filter, inspect source evidence, and select contacts for Google Mail Merge or Gmail outreach.
+            Filter, inspect source evidence, import from CSV, and select contacts for Google Mail Merge.
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => setShowImportModal(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}
+          >
+            <Upload size={14} /> Import CSV
+          </button>
           <button className="btn btn-secondary btn-sm" onClick={handleExportCsv}>
             <Download size={14} /> Export CSV {selectedIds.size > 0 && `(${selectedIds.size})`}
           </button>
@@ -161,10 +227,12 @@ export const ContactsTable: React.FC<ContactsTableProps> = ({ onPrepareMailMerge
               value={sourceFilter}
               onChange={(e) => setSourceFilter(e.target.value)}
             >
-              <option value="">All Providers</option>
+              <option value="">All Providers & Sources</option>
               <option value="apollo">Apollo.io</option>
               <option value="hunter">Hunter.io</option>
               <option value="snov">Snov.io</option>
+              <option value="official_website">Official Website Probe</option>
+              <option value="csv_import">Manual CSV Import</option>
               <option value="mock">Mock Simulator</option>
             </select>
           </div>
@@ -428,6 +496,153 @@ export const ContactsTable: React.FC<ContactsTableProps> = ({ onPrepareMailMerge
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* CSV Import Modal */}
+      {showImportModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card" style={{ maxWidth: '640px', width: '90%' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Upload size={18} color="#818cf8" />
+                <h3 style={{ margin: 0 }}>Import Contacts from CSV</h3>
+              </div>
+              <button className="btn btn-secondary btn-sm" onClick={handleCloseImport}>✕</button>
+            </div>
+
+            {importError && (
+              <div
+                style={{
+                  padding: '0.75rem 1rem',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: '#fca5a5',
+                  marginBottom: '1rem',
+                  fontSize: '0.8125rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                }}
+              >
+                <AlertCircle size={15} style={{ flexShrink: 0 }} />
+                <span>{importError}</span>
+              </div>
+            )}
+
+            {importResult ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div
+                  style={{
+                    padding: '1rem',
+                    background: 'rgba(16, 185, 129, 0.1)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    borderRadius: 'var(--radius-md)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#6ee7b7', fontWeight: 600, marginBottom: '0.5rem' }}>
+                    <CheckCircle size={18} />
+                    <span>CSV Import Completed</span>
+                  </div>
+                  <div style={{ fontSize: '0.8125rem', color: '#cbd5e1', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <div>Total Processed: <strong>{importResult.summary?.totalRows || 0}</strong></div>
+                    <div>New Contacts Created: <strong style={{ color: '#10b981' }}>{importResult.summary?.imported || 0}</strong></div>
+                    <div>Existing Contacts Updated: <strong style={{ color: '#60a5fa' }}>{importResult.summary?.updated || 0}</strong></div>
+                    <div>Skipped (Suppressed): <strong style={{ color: '#f59e0b' }}>{importResult.summary?.skippedSuppressed || 0}</strong></div>
+                  </div>
+                </div>
+
+                {importResult.rowErrors && importResult.rowErrors.length > 0 && (
+                  <div style={{ maxHeight: '140px', overflowY: 'auto', background: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', fontSize: '0.75rem' }}>
+                    <div style={{ fontWeight: 600, color: '#fca5a5', marginBottom: '0.35rem' }}>Row Issues ({importResult.rowErrors.length}):</div>
+                    {importResult.rowErrors.map((re: any, idx: number) => (
+                      <div key={idx} style={{ color: '#f87171', marginBottom: '0.25rem' }}>
+                        Row {re.row}: {re.error}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+                  <button className="btn btn-primary" onClick={handleCloseImport}>
+                    Done & View Selected Contacts ({selectedIds.size})
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+                  Import contacts directly into your referral pipeline. Supports deduplication by email, company association, and source provenance tracking.
+                </p>
+
+                {/* Format Guidance */}
+                <div
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.25)',
+                    border: '1px dashed rgba(255, 255, 255, 0.15)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '0.75rem',
+                    marginBottom: '1rem',
+                    fontSize: '0.75rem',
+                    color: '#94a3b8',
+                  }}
+                >
+                  <strong style={{ color: '#c7d2fe' }}>Expected CSV columns:</strong> <code>company, role, name, email, source, verification_status</code>
+                  <br />
+                  <span style={{ color: '#64748b' }}>Example: Stripe, Senior Recruiter, Sarah Connor, sarah@stripe.com, manual_import, verified</span>
+                </div>
+
+                {/* File picker */}
+                <div style={{ marginBottom: '1rem' }}>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept=".csv,text/csv"
+                    style={{ display: 'none' }}
+                    onChange={handleFileChange}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', marginBottom: '0.5rem' }}
+                  >
+                    <FileText size={14} /> {importFileName ? `Selected: ${importFileName}` : 'Choose .CSV File'}
+                  </button>
+                </div>
+
+                {/* Direct Paste Area */}
+                <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+                  <label className="form-label" style={{ fontSize: '0.8125rem' }}>Or Paste CSV Text:</label>
+                  <textarea
+                    className="form-textarea"
+                    rows={6}
+                    placeholder={"company,role,name,email,source,verification_status\nStripe,Recruiter,Jane Doe,jane.doe@stripe.com,csv_import,verified\nDatadog,Engineering Manager,Alex Smith,alex.smith@datadoghq.com,csv_import,verified"}
+                    value={importCsvText}
+                    onChange={(e) => setImportCsvText(e.target.value)}
+                    style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={handleCloseImport}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    disabled={importLoading || !importCsvText.trim()}
+                    onClick={handleExecuteImport}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}
+                  >
+                    {importLoading ? <Upload size={14} className="animate-spin" /> : <Upload size={14} />}
+                    <span>{importLoading ? 'Importing...' : 'Upload & Process CSV'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
