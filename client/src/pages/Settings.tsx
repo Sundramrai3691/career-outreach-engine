@@ -22,6 +22,8 @@ export const Settings: React.FC = () => {
 
   // Form states for custom overrides
   const [openOverrides, setOpenOverrides] = useState<Record<string, boolean>>({});
+  const [tombaKey, setTombaKey] = useState('');
+  const [tombaSecret, setTombaSecret] = useState('');
   const [apolloKey, setApolloKey] = useState('');
   const [hunterKey, setHunterKey] = useState('');
   const [snovId, setSnovId] = useState('');
@@ -77,7 +79,10 @@ export const Settings: React.FC = () => {
   const handleSaveProvider = async (providerKey: string) => {
     try {
       let data: any = {};
-      if (providerKey === 'apollo') {
+      if (providerKey === 'tomba') {
+        data.apiKey = tombaKey;
+        data.secret = tombaSecret;
+      } else if (providerKey === 'apollo') {
         data.apiKey = apolloKey;
       } else if (providerKey === 'hunter') {
         data.apiKey = hunterKey;
@@ -94,6 +99,8 @@ export const Settings: React.FC = () => {
       setTimeout(() => setFeedbackMessage(null), 3500);
 
       // Clear override inputs
+      setTombaKey('');
+      setTombaSecret('');
       setApolloKey('');
       setHunterKey('');
       setSnovId('');
@@ -240,19 +247,39 @@ export const Settings: React.FC = () => {
         <div
           style={{
             marginTop: '0.75rem',
-            padding: '0.5rem 0.75rem',
+            padding: '0.625rem 0.75rem',
             borderRadius: 'var(--radius-sm)',
             fontSize: '0.75rem',
             background: 'rgba(16, 185, 129, 0.1)',
             border: '1px solid rgba(16, 185, 129, 0.25)',
             color: '#6ee7b7',
             display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
+            flexDirection: 'column',
+            gap: '0.375rem',
           }}
         >
-          <CheckCircle2 size={13} style={{ flexShrink: 0 }} />
-          <span>{message || 'Connected successfully and operational.'}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <CheckCircle2 size={13} style={{ flexShrink: 0 }} />
+            <span>{message || 'Connected successfully and operational.'}</span>
+          </div>
+          {(res?.planName || res?.availableSearches !== undefined || res?.availableVerifications !== undefined) && (
+            <div
+              style={{
+                display: 'flex',
+                gap: '0.75rem',
+                marginTop: '0.25rem',
+                paddingTop: '0.375rem',
+                borderTop: '1px solid rgba(16, 185, 129, 0.2)',
+                fontSize: '0.7rem',
+                color: '#a7f3d0',
+                flexWrap: 'wrap',
+              }}
+            >
+              {res.planName && <span>Plan: <strong style={{ color: '#ecfdf5' }}>{res.planName}</strong></span>}
+              {res.availableSearches !== undefined && <span>Searches Left: <strong style={{ color: '#ecfdf5' }}>{res.availableSearches}</strong></span>}
+              {res.availableVerifications !== undefined && <span>Verifications Left: <strong style={{ color: '#ecfdf5' }}>{res.availableVerifications}</strong></span>}
+            </div>
+          )}
         </div>
       );
     }
@@ -339,6 +366,97 @@ export const Settings: React.FC = () => {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))', gap: '1.25rem' }}>
+          {/* Tomba Provider Card */}
+          {(() => {
+            const tomba = getProviderInfo('tomba');
+            const isTesting = testingKey === 'tomba';
+            const isOverrideOpen = openOverrides['tomba'];
+
+            return (
+              <div
+                className="card"
+                style={{
+                  background: 'rgba(30, 41, 59, 0.6)',
+                  border: '1px solid var(--border-color)',
+                  padding: '1.25rem',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <div style={{ fontWeight: 600, fontSize: '1rem' }}>Tomba.io</div>
+                    {renderSourceBadge(tomba)}
+                  </div>
+
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => handleTestHealth('tomba')}
+                    disabled={isTesting}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}
+                  >
+                    {isTesting ? <Loader2 size={13} className="animate-pulse" /> : <Activity size={13} />}
+                    <span>{isTesting ? 'Testing...' : 'Test Connection'}</span>
+                  </button>
+                </div>
+
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                  Free-tier Domain Search & verified email resolution (10 results/query). Configured via <code>TOMBA_API_KEY</code> & <code>TOMBA_SECRET_KEY</code>.
+                </p>
+
+                {renderHealthNotice('tomba')}
+
+                {/* Optional Override Section */}
+                <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                  <button
+                    type="button"
+                    onClick={() => setOpenOverrides((p) => ({ ...p, tomba: !p.tomba }))}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-secondary)',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      padding: 0,
+                    }}
+                  >
+                    <span>{isOverrideOpen ? 'Hide custom override' : 'Custom key override (optional)'}</span>
+                    {isOverrideOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  </button>
+
+                  {isOverrideOpen && (
+                    <div style={{ marginTop: '0.75rem' }}>
+                      <div className="form-group" style={{ marginBottom: '0.5rem' }}>
+                        <input
+                          type="password"
+                          className="form-input"
+                          value={tombaKey}
+                          onChange={(e) => setTombaKey(e.target.value)}
+                          placeholder="Tomba API Key (ta_...)..."
+                          style={{ fontSize: '0.8125rem', marginBottom: '0.375rem' }}
+                        />
+                        <input
+                          type="password"
+                          className="form-input"
+                          value={tombaSecret}
+                          onChange={(e) => setTombaSecret(e.target.value)}
+                          placeholder="Tomba Secret Key (ts_...)..."
+                          style={{ fontSize: '0.8125rem' }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                        <button className="btn btn-primary btn-sm" onClick={() => handleSaveProvider('tomba')}>
+                          Save Override
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Apollo Provider Card */}
           {(() => {
             const apollo = getProviderInfo('apollo');

@@ -70,4 +70,27 @@ describe('NormalizerService Unit Tests', () => {
       expect(result.missingVariables).toContain('MissingVar');
     });
   });
+
+  describe('Tomba Parameter Mappings', () => {
+    it('maps target roles to Tomba valid departments', () => {
+      expect(NormalizerService.mapRolesToTombaDepartment(['Technical Recruiter'])).toBe('hr');
+      expect(NormalizerService.mapRolesToTombaDepartment(['Talent Acquisition Specialist'])).toBe('hr');
+      expect(NormalizerService.mapRolesToTombaDepartment(['Engineering Manager'])).toBe('engineering');
+      expect(NormalizerService.mapRolesToTombaDepartment(['Software Engineer'])).toBe('engineering');
+      expect(NormalizerService.mapRolesToTombaDepartment(['Account Executive'])).toBe('sales');
+      expect(NormalizerService.mapRolesToTombaDepartment(['Content Strategist'])).toBe('marketing');
+      expect(NormalizerService.mapRolesToTombaDepartment(['Product Manager', 'CEO'])).toBeUndefined();
+    });
+
+    it('maps locations to 2-letter ISO country codes', () => {
+      expect(NormalizerService.mapLocationToCountryCode('San Francisco, CA')).toBe('US');
+      expect(NormalizerService.mapLocationToCountryCode('London, United Kingdom')).toBe('GB');
+      expect(NormalizerService.mapLocationToCountryCode('Toronto, Canada')).toBe('CA');
+      expect(NormalizerService.mapLocationToCountryCode('Berlin, Germany')).toBe('DE');
+      expect(NormalizerService.mapLocationToCountryCode('Bangalore, India')).toBe('IN');
+      expect(NormalizerService.mapLocationToCountryCode('Paris, France')).toBe('FR');
+      expect(NormalizerService.mapLocationToCountryCode('Unknown Galaxy')).toBeUndefined();
+      expect(NormalizerService.mapLocationToCountryCode(undefined)).toBeUndefined();
+    });
+  });
 });

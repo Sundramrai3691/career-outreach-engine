@@ -10,6 +10,7 @@ import { IContactProvider } from '../../providers/base.provider.js';
 import { ApolloProvider } from '../../providers/apollo/apollo.provider.js';
 import { HunterProvider } from '../../providers/hunter/hunter.provider.js';
 import { SnovProvider } from '../../providers/snov/snov.provider.js';
+import { TombaProvider } from '../../providers/tomba/tomba.provider.js';
 import { MockProvider } from '../../providers/mock/mock.provider.js';
 import { OfficialWebProvider } from '../../providers/official-web/official-web.provider.js';
 import { NormalizerService } from '../normalizer.service.js';
@@ -24,6 +25,7 @@ export class DiscoveryOrchestrator {
   private verificationService: EmailVerificationService;
   private credentialResolver: CredentialResolver;
   private cancelledRuns: Set<string> = new Set();
+  private hasCustomProviders: boolean = false;
 
   constructor(
     private prisma: PrismaClient,
@@ -36,7 +38,9 @@ export class DiscoveryOrchestrator {
 
     if (customProviders) {
       this.providers = customProviders;
+      this.hasCustomProviders = true;
     } else {
+      this.providers.set('tomba', new TombaProvider());
       this.providers.set('apollo', new ApolloProvider());
       this.providers.set('hunter', hunter);
       this.providers.set('snov', new SnovProvider());
@@ -123,22 +127,25 @@ export class DiscoveryOrchestrator {
   private async executeRun(runId: string, config: DiscoveryRunConfig): Promise<void> {
     const run = await this.prisma.discoveryRun.findUnique({
       where: { id: runId },
-      include: { items: true },
+      include: { items: { include: { company: true } } },
     });
 
     if (!run) return;
 
     // 1. Dynamically resolve credentials for all providers
     const providerStatusMap = new Map<ProviderName, boolean>();
-    const allProviders: ProviderName[] = ['apollo', 'hunter', 'snov', 'official_website', 'mock'];
+    const allProviders: ProviderName[] = ['tomba', 'apollo', 'hunter', 'snov', 'official_website', 'mock'];
 
     for (const p of allProviders) {
       const res = await this.credentialResolver.resolve(p);
-      providerStatusMap.set(p, res.isConfigured);
+      const isConfigured = res.isConfigured || (this.hasCustomProviders && this.providers.has(p));
+      providerStatusMap.set(p, isConfigured);
 
       const providerInstance = this.providers.get(p);
       if (providerInstance) {
-        if (p === 'apollo' && 'setApiKey' in providerInstance) {
+        if (p === 'tomba' && 'setCredentials' in providerInstance) {
+          (providerInstance as TombaProvider).setCredentials(res.apiKey, res.secret || '');
+        } else if (p === 'apollo' && 'setApiKey' in providerInstance) {
           (providerInstance as ApolloProvider).setApiKey(res.apiKey);
         } else if (p === 'hunter' && 'setApiKey' in providerInstance) {
           (providerInstance as HunterProvider).setApiKey(res.apiKey);
@@ -148,7 +155,7 @@ export class DiscoveryOrchestrator {
       }
     }
 
-    const defaultPriority: ProviderName[] = ['apollo', 'hunter', 'snov', 'official_website'];
+    const defaultPriority: ProviderName[] = ['tomba', 'apollo', 'hunter', 'snov', 'official_website'];
     const providerPriority: ProviderName[] =
       config.providerPriority && config.providerPriority.length > 0
         ? config.providerPriority
@@ -234,6 +241,111 @@ export class DiscoveryOrchestrator {
           }
 
           provider.clearLastError();
+
+          // Stage: Tomba Domain Search (First Active Provider)
+          if (providerKey === 'tomba') {
+            const canSpendTomba = await this.budgetService.canSpend('tomba', 1, totalCreditsSpent, config.maxBudget);
+            if (!canSpendTomba) {
+              providerAttempts.push({
+                provider: providerKey,
+                status: 'skipped',
+                reason: 'Tomba budget cap reached',
+              });
+              continue;
+            }
+
+            const department = NormalizerService.mapRolesToTombaDepartment(targetRoles);
+            const country = NormalizerService.mapLocationToCountryCode(item.company?.location || undefined);
+
+            const tombaContacts = await (provider as TombaProvider).searchDomainContacts(domain, targetRoles, {
+              department,
+              country,
+              limit: 10,
+            });
+            const tombaError = provider.getLastError();
+
+            if (tombaError) {
+              providerAttempts.push({
+                provider: providerKey,
+                status: 'error',
+                reason: tombaError,
+              });
+            } else if (tombaContacts.length === 0) {
+              providerAttempts.push({
+                provider: providerKey,
+                status: 'no_results',
+                reason: 'No domain contacts returned from Tomba index',
+              });
+            } else {
+              const matchedContacts: DiscoveredPersonProfile[] = [];
+              for (const c of tombaContacts) {
+                const jobTitle = c.position || (c as any).title || '';
+                const match = NormalizerService.matchTargetRole(jobTitle, targetRoles);
+                if (match.isMatch || targetRoles.length === 0) {
+                  matchedContacts.push({
+                    id: `tomba-${c.email}`,
+                    firstName: c.firstName,
+                    lastName: c.lastName,
+                    fullName: c.fullName || `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.email.split('@')[0],
+                    jobTitle,
+                    companyName: item.companyName,
+                    companyDomain: domain,
+                    matchedRole: match.matchedRole || targetRoles[0] || 'Target Role',
+                    email: c.email,
+                    emailStatus: c.status,
+                    confidenceScore: c.confidence || 85,
+                    sourceProvider: providerKey,
+                    sourceUrl: c.sources?.[0]?.uri,
+                  });
+                }
+              }
+
+              if (matchedContacts.length > 0) {
+                candidates.push(...matchedContacts);
+                providerAttempts.push({
+                  provider: providerKey,
+                  status: 'found',
+                  reason: `Discovered ${matchedContacts.length} contact(s) matching target roles`,
+                });
+                totalCreditsSpent += 1;
+                await this.budgetService.recordUsage('tomba', 1);
+              } else {
+                providerAttempts.push({
+                  provider: providerKey,
+                  status: 'no_results',
+                  reason: `${tombaContacts.length} contact(s) found at ${domain}, but none matched requested roles (${targetRoles.join(', ')})`,
+                });
+                totalCreditsSpent += 1;
+                await this.budgetService.recordUsage('tomba', 1);
+              }
+            }
+          }
+
+          // Circuit breaker check for Apollo
+          if (providerKey === 'apollo') {
+            const health = await provider.healthCheck();
+            if (!health.canSearch) {
+              providerAttempts.push({
+                provider: providerKey,
+                status: 'skipped',
+                reason: health.message || 'Apollo plan restricted: people-search endpoint unavailable',
+              });
+              continue;
+            }
+          }
+
+          // Circuit breaker check for Hunter
+          if (providerKey === 'hunter') {
+            const health = await provider.healthCheck();
+            if (!health.canSearch) {
+              providerAttempts.push({
+                provider: providerKey,
+                status: 'skipped',
+                reason: health.message || 'Hunter account restricted (429)',
+              });
+              continue;
+            }
+          }
 
           // Stage B: People Search (Apollo, Mock)
           if (providerKey === 'apollo' || providerKey === 'mock') {

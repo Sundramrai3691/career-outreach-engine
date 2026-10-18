@@ -91,11 +91,103 @@ export class NormalizerService {
   }
 
   /**
-   * Checks equivalent keywords for common recruitment and tech roles
+   * Translates selected target roles to Tomba's documented department filters
+   * ('hr', 'engineering', 'sales', 'marketing', 'legal', 'support').
+   * If roles span multiple departments or cannot be unambiguously mapped, returns undefined.
+   */
+  static mapRolesToTombaDepartment(roles: string[]): string | undefined {
+    if (!roles || roles.length === 0) return undefined;
+
+    const hrKeywords = ['recruiter', 'talent', 'sourcer', 'recruiting', 'hr', 'human resources', 'people partner', 'talent acquisition'];
+    const engineeringKeywords = [
+      'software', 'engineer', 'engineering', 'developer', 'tech lead', 'architect',
+      'frontend', 'backend', 'full stack', 'devops', 'sre', 'systems', 'infrastructure'
+    ];
+    const salesKeywords = ['sales', 'account executive', 'business development', 'sdr', 'bdr', 'ae'];
+    const marketingKeywords = ['marketing', 'growth', 'seo', 'content', 'brand'];
+
+    const roleMatchesCategory = (role: string, keywords: string[]) => {
+      const r = role.toLowerCase();
+      return keywords.some((kw) => r.includes(kw));
+    };
+
+    const isAllHr = roles.every((r) => roleMatchesCategory(r, hrKeywords));
+    if (isAllHr) return 'hr';
+
+    const isAllEng = roles.every((r) => roleMatchesCategory(r, engineeringKeywords));
+    if (isAllEng) return 'engineering';
+
+    const isAllSales = roles.every((r) => roleMatchesCategory(r, salesKeywords));
+    if (isAllSales) return 'sales';
+
+    const isAllMarketing = roles.every((r) => roleMatchesCategory(r, marketingKeywords));
+    if (isAllMarketing) return 'marketing';
+
+    return undefined;
+  }
+
+  /**
+   * Maps user-entered location text to a 2-letter ISO 3166-1 alpha-2 country code
+   * for Tomba country filtering.
+   */
+  static mapLocationToCountryCode(location?: string): string | undefined {
+    if (!location || !location.trim()) return undefined;
+    const loc = location.trim().toLowerCase();
+
+    // United States / US states & major tech hubs
+    if (
+      loc.includes('united states') ||
+      loc.includes('usa') ||
+      loc.includes(' u.s.') ||
+      loc.includes('san francisco') ||
+      loc.includes('new york') ||
+      loc.includes('seattle') ||
+      loc.includes('austin') ||
+      loc.includes('chicago') ||
+      loc.includes('boston') ||
+      loc.includes('los angeles') ||
+      loc.includes('california') ||
+      loc.includes('texas') ||
+      /\b(ca|ny|tx|wa|il|ma|fl|co|nc|ga)\b/i.test(loc)
+    ) {
+      return 'US';
+    }
+
+    // United Kingdom
+    if (loc.includes('united kingdom') || loc.includes('uk') || loc.includes('london') || loc.includes('england')) {
+      return 'GB';
+    }
+
+    // Canada
+    if (loc.includes('canada') || loc.includes('toronto') || loc.includes('vancouver') || loc.includes('montreal')) {
+      return 'CA';
+    }
+
+    // Germany
+    if (loc.includes('germany') || loc.includes('deutschland') || loc.includes('berlin') || loc.includes('munich')) {
+      return 'DE';
+    }
+
+    // France
+    if (loc.includes('france') || loc.includes('paris')) {
+      return 'FR';
+    }
+
+    // India
+    if (loc.includes('india') || loc.includes('bengaluru') || loc.includes('bangalore') || loc.includes('delhi') || loc.includes('mumbai') || loc.includes('hyderabad')) {
+      return 'IN';
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Checks equivalent keywords for common recruitment, engineering, and tech management roles
    */
   private static areRolesEquivalent(titleLower: string, targetLower: string): boolean {
     const recruiterSynonyms = ['recruiter', 'talent', 'talent acquisition', 'sourcer', 'recruiting', 'people partner', 'hr'];
     const engineeringManagerSynonyms = ['engineering manager', 'tech lead', 'em', 'director of engineering', 'vp of engineering', 'head of engineering'];
+    const softwareEngineerSynonyms = ['software engineer', 'software developer', 'backend engineer', 'frontend engineer', 'full stack engineer', 'staff engineer', 'principal engineer', 'systems engineer'];
 
     const isTargetRecruiter = recruiterSynonyms.some((s) => targetLower.includes(s));
     if (isTargetRecruiter) {
@@ -107,6 +199,13 @@ export class NormalizerService {
     const isTargetEM = engineeringManagerSynonyms.some((s) => targetLower.includes(s));
     if (isTargetEM) {
       if (engineeringManagerSynonyms.some((s) => titleLower.includes(s))) {
+        return true;
+      }
+    }
+
+    const isTargetSWE = softwareEngineerSynonyms.some((s) => targetLower.includes(s));
+    if (isTargetSWE) {
+      if (softwareEngineerSynonyms.some((s) => titleLower.includes(s))) {
         return true;
       }
     }

@@ -104,4 +104,97 @@ describe('CredentialResolver Unit Tests', () => {
     expect(resolved.source).toBe('environment');
     expect(mockPrisma.providerSetting.findUnique).not.toHaveBeenCalled();
   });
+
+  describe('Tomba Credential Resolution', () => {
+    beforeEach(() => {
+      delete process.env.TOMBA_API_KEY;
+      delete process.env.TOMBA_SECRET_KEY;
+      delete process.env.TOMBA_API_SECRET;
+    });
+
+    it('resolves TOMBA_API_KEY and TOMBA_SECRET_KEY from environment', async () => {
+      process.env.TOMBA_API_KEY = 'ta_test_key_123';
+      process.env.TOMBA_SECRET_KEY = 'ts_test_secret_456';
+
+      const mockPrisma: any = {
+        providerSetting: {
+          findUnique: vi.fn().mockResolvedValue(null),
+        },
+      };
+
+      const resolver = new CredentialResolver(mockPrisma);
+      const resolved = await resolver.resolve('tomba');
+
+      expect(resolved.isConfigured).toBe(true);
+      expect(resolved.source).toBe('environment');
+      expect(resolved.apiKey).toBe('ta_test_key_123');
+      expect(resolved.secret).toBe('ts_test_secret_456');
+    });
+
+    it('supports TOMBA_API_SECRET as backward-compatible alias for TOMBA_SECRET_KEY', async () => {
+      process.env.TOMBA_API_KEY = 'ta_test_key_123';
+      process.env.TOMBA_API_SECRET = 'ts_test_secret_alias';
+
+      const mockPrisma: any = {
+        providerSetting: {
+          findUnique: vi.fn().mockResolvedValue(null),
+        },
+      };
+
+      const resolver = new CredentialResolver(mockPrisma);
+      const resolved = await resolver.resolve('tomba');
+
+      expect(resolved.isConfigured).toBe(true);
+      expect(resolved.secret).toBe('ts_test_secret_alias');
+    });
+
+    it('throws error when TOMBA_SECRET_KEY and TOMBA_API_SECRET have conflicting values', async () => {
+      process.env.TOMBA_API_KEY = 'ta_test_key_123';
+      process.env.TOMBA_SECRET_KEY = 'secret_one';
+      process.env.TOMBA_API_SECRET = 'secret_two';
+
+      const mockPrisma: any = {
+        providerSetting: {
+          findUnique: vi.fn().mockResolvedValue(null),
+        },
+      };
+
+      const resolver = new CredentialResolver(mockPrisma);
+      await expect(resolver.resolve('tomba')).rejects.toThrow(
+        /Conflicting values for TOMBA_SECRET_KEY and alias TOMBA_API_SECRET/
+      );
+    });
+
+    it('allows identical TOMBA_SECRET_KEY and TOMBA_API_SECRET', async () => {
+      process.env.TOMBA_API_KEY = 'ta_test_key_123';
+      process.env.TOMBA_SECRET_KEY = 'same_secret';
+      process.env.TOMBA_API_SECRET = 'same_secret';
+
+      const mockPrisma: any = {
+        providerSetting: {
+          findUnique: vi.fn().mockResolvedValue(null),
+        },
+      };
+
+      const resolver = new CredentialResolver(mockPrisma);
+      const resolved = await resolver.resolve('tomba');
+      expect(resolved.isConfigured).toBe(true);
+      expect(resolved.secret).toBe('same_secret');
+    });
+
+    it('reports missing when Tomba credentials are absent', async () => {
+      const mockPrisma: any = {
+        providerSetting: {
+          findUnique: vi.fn().mockResolvedValue(null),
+        },
+      };
+
+      const resolver = new CredentialResolver(mockPrisma);
+      const resolved = await resolver.resolve('tomba');
+
+      expect(resolved.isConfigured).toBe(false);
+      expect(resolved.source).toBe('missing');
+      expect(resolved.missingEnvVar).toBe('TOMBA_API_KEY & TOMBA_SECRET_KEY');
+    });
+  });
 });

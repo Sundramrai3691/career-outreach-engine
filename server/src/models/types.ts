@@ -4,6 +4,7 @@
 
 export type EmailVerificationStatus =
   | 'verified'
+  | 'valid'
   | 'unverified'
   | 'accept_all'
   | 'unknown'
@@ -23,7 +24,7 @@ export type OutreachState =
   | 'opted_out'
   | 'suppressed';
 
-export type ProviderName = 'apollo' | 'hunter' | 'snov' | 'mock' | 'official_website' | 'csv_import';
+export type ProviderName = 'tomba' | 'apollo' | 'hunter' | 'snov' | 'mock' | 'official_website' | 'csv_import';
 
 export type DiscoveryItemStatus =
   | 'waiting'
@@ -139,8 +140,11 @@ export interface ProviderUsageResult {
 
 export type ProviderHealthStatus =
   | 'operational'
+  | 'healthy'
   | 'authenticated_restricted'
   | 'account_restricted'
+  | 'quota_exhausted'
+  | 'rate_limited'
   | 'auth_failed'
   | 'missing_credentials'
   | 'error';
@@ -148,6 +152,7 @@ export type ProviderHealthStatus =
 export interface ProviderHealthResult {
   healthy: boolean;
   authenticated?: boolean;
+  authConfigured?: boolean;
   canSearch?: boolean;
   provider: ProviderName;
   status?: ProviderHealthStatus;
@@ -156,6 +161,18 @@ export interface ProviderHealthResult {
   restrictionReason?: string;
   nextAction?: string;
   latencyMs?: number;
+  planName?: string;
+  availableSearches?: number;
+  availableVerifications?: number;
+  rateLimits?: {
+    rps?: number;
+    rpm?: number;
+    daily?: number;
+    dailyLeft?: number;
+    limitRequests?: number;
+    remainingRequests?: number;
+    resetTime?: number;
+  };
 }
 
 export interface DiscoveryRunConfig {

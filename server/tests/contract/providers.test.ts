@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { MockProvider } from '../../src/providers/mock/mock.provider.js';
 import { ApolloProvider } from '../../src/providers/apollo/apollo.provider.js';
 import { HunterProvider } from '../../src/providers/hunter/hunter.provider.js';
+import { TombaProvider } from '../../src/providers/tomba/tomba.provider.js';
 
 describe('Provider Contract & Adapter Tests', () => {
   describe('MockProvider Contract (Deterministic Simulation)', () => {
@@ -64,6 +65,10 @@ describe('Provider Contract & Adapter Tests', () => {
       const hunter = new HunterProvider('');
       const contacts = await hunter.searchDomainContacts('example.com', ['Engineer']);
       expect(contacts).toEqual([]);
+
+      const tomba = new TombaProvider('', '');
+      const tombaContacts = await tomba.searchDomainContacts('example.com', {});
+      expect(tombaContacts).toEqual([]);
     });
   });
 });

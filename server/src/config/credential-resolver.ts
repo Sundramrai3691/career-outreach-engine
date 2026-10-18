@@ -64,12 +64,23 @@ export class CredentialResolver {
 
     // If a valid non-empty DB override was found, it takes precedence
     if (dbKey.length > 0) {
+      if (provider === 'tomba' && !dbSecret) {
+        const secretKey = process.env.TOMBA_SECRET_KEY?.trim() || '';
+        const apiSecret = process.env.TOMBA_API_SECRET?.trim() || '';
+        if (secretKey && apiSecret && secretKey !== apiSecret) {
+          throw new Error(
+            'Configuration error: Conflicting values for TOMBA_SECRET_KEY and alias TOMBA_API_SECRET. Please ensure both variables match or define only TOMBA_SECRET_KEY.'
+          );
+        }
+        dbSecret = secretKey || apiSecret;
+      }
+
       return {
         provider,
         apiKey: dbKey,
         secret: dbSecret || undefined,
         source: 'database_override',
-        isConfigured: true,
+        isConfigured: provider === 'tomba' ? Boolean(dbKey && dbSecret) : true,
       };
     }
 
@@ -78,7 +89,39 @@ export class CredentialResolver {
     let envSecret = '';
     let expectedVarName = '';
 
-    if (provider === 'apollo') {
+    if (provider === 'tomba') {
+      expectedVarName = 'TOMBA_API_KEY';
+      envKey = process.env.TOMBA_API_KEY?.trim() || '';
+      const secretKey = process.env.TOMBA_SECRET_KEY?.trim() || '';
+      const apiSecret = process.env.TOMBA_API_SECRET?.trim() || '';
+
+      if (secretKey && apiSecret && secretKey !== apiSecret) {
+        throw new Error(
+          'Configuration error: Conflicting values for TOMBA_SECRET_KEY and alias TOMBA_API_SECRET. Please ensure both variables match or define only TOMBA_SECRET_KEY.'
+        );
+      }
+
+      envSecret = secretKey || apiSecret;
+
+      if (envKey.length > 0 && envSecret.length > 0) {
+        return {
+          provider,
+          apiKey: envKey,
+          secret: envSecret,
+          source: 'environment',
+          isConfigured: true,
+        };
+      }
+
+      return {
+        provider,
+        apiKey: envKey,
+        secret: envSecret || undefined,
+        source: 'missing',
+        isConfigured: false,
+        missingEnvVar: !envKey && !envSecret ? 'TOMBA_API_KEY & TOMBA_SECRET_KEY' : !envKey ? 'TOMBA_API_KEY' : 'TOMBA_SECRET_KEY',
+      };
+    } else if (provider === 'apollo') {
       expectedVarName = 'APOLLO_API_KEY';
       envKey = process.env.APOLLO_API_KEY?.trim() || '';
     } else if (provider === 'hunter') {

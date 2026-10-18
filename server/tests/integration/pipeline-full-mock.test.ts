@@ -273,4 +273,94 @@ Acme Corp,Engineering Director,Sam Altman,sam.dir.${uniqueSuffix}@acmecorp.com,c
     expect(savedContact).toBeDefined();
     expect(savedContact?.fullName).toBe('Robin Banks');
   });
+
+  it('Step 7: Tomba domain discovery integrates with orchestrator and saves matched contacts', async () => {
+    const uniqueDomain = `stripe-${Date.now()}.com`;
+
+    const mockTombaProvider: IContactProvider = {
+      name: 'tomba',
+      searchPeople: vi.fn().mockResolvedValue([]),
+      enrichPerson: vi.fn().mockResolvedValue({ success: false }),
+      searchDomainContacts: vi.fn().mockResolvedValue([
+        {
+          providerContactId: 'tb-123',
+          email: `recruiter@${uniqueDomain}`,
+          firstName: 'Taylor',
+          lastName: 'Swift',
+          fullName: 'Taylor Swift',
+          position: 'Senior Technical Recruiter',
+          title: 'Senior Technical Recruiter',
+          companyName: 'Stripe',
+          confidence: 90,
+          status: 'verified',
+          metadata: {
+            department: 'hr',
+            seniority: 'senior',
+          },
+        },
+      ]),
+      findEmail: vi.fn().mockResolvedValue({ found: false }),
+      verifyEmail: vi.fn().mockResolvedValue({ status: 'valid', score: 95 }),
+      healthCheck: vi.fn().mockResolvedValue({
+        healthy: true,
+        provider: 'tomba',
+        status: 'healthy',
+        authConfigured: true,
+        canSearch: true,
+      }),
+      getUsage: vi.fn().mockResolvedValue({ planName: 'Free', availableSearches: 25 }),
+      getLastError: vi.fn().mockReturnValue(null),
+      clearLastError: vi.fn(),
+    };
+
+    const customProviders = new Map<ProviderName, IContactProvider>();
+    customProviders.set('tomba', mockTombaProvider);
+
+    const orchestrator = new DiscoveryOrchestrator(prisma, customProviders);
+
+    const runId = await orchestrator.startDiscovery(
+      [
+        {
+          name: 'Stripe',
+          domain: uniqueDomain,
+          targetRoles: ['Technical Recruiter'],
+          location: 'San Francisco, CA',
+        },
+      ],
+      {
+        providerPriority: ['tomba'],
+        allowEnrichment: false,
+        freeFirstMode: true,
+        verifyEmails: false,
+      }
+    );
+
+    // Give background async orchestrator loop time to complete
+    await new Promise((resolve) => setTimeout(resolve, 800));
+
+    const finishedRun = await prisma.discoveryRun.findUnique({
+      where: { id: runId },
+      include: { items: true },
+    });
+
+    expect(finishedRun).toBeDefined();
+    expect(finishedRun?.contactsFound).toBe(1);
+    expect(finishedRun?.status).toBe('completed_with_results');
+
+    // Confirm candidate was saved in database
+    const savedContact = await prisma.contact.findUnique({
+      where: { email: `recruiter@${uniqueDomain}` },
+    });
+    expect(savedContact).toBeDefined();
+    expect(savedContact?.fullName).toBe('Taylor Swift');
+    expect(savedContact?.primarySource).toBe('tomba');
+    expect(mockTombaProvider.searchDomainContacts).toHaveBeenCalledWith(
+      uniqueDomain,
+      ['Technical Recruiter'],
+      expect.objectContaining({
+        department: 'hr',
+        country: 'US',
+      })
+    );
+  });
 });

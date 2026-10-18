@@ -43,7 +43,8 @@ export const NewDiscovery: React.FC<NewDiscoveryProps> = ({
   const [allowEnrichment, setAllowEnrichment] = useState(false);
   const [freeFirstMode, setFreeFirstMode] = useState(true);
   const [verifyEmails, setVerifyEmails] = useState(true);
-  const [providerPriority, setProviderPriority] = useState<('apollo' | 'hunter' | 'snov' | 'mock')[]>([
+  const [providerPriority, setProviderPriority] = useState<('tomba' | 'apollo' | 'hunter' | 'snov' | 'mock')[]>([
+    'tomba',
     'apollo',
     'hunter',
     'snov',

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { TombaProvider } from '../providers/tomba/tomba.provider.js';
 import { ApolloProvider } from '../providers/apollo/apollo.provider.js';
 import { HunterProvider } from '../providers/hunter/hunter.provider.js';
 import { SnovProvider } from '../providers/snov/snov.provider.js';
@@ -22,7 +23,7 @@ export function createSettingsRouter(prisma: PrismaClient): Router {
   router.get('/', async (_req, res, next) => {
     try {
       const dbSettings = await prisma.providerSetting.findMany();
-      const providers: ProviderName[] = ['apollo', 'hunter', 'snov', 'official_website', 'mock'];
+      const providers: ProviderName[] = ['tomba', 'apollo', 'hunter', 'snov', 'official_website', 'mock'];
 
       const results = await Promise.all(
         providers.map(async (key) => {
@@ -32,7 +33,17 @@ export function createSettingsRouter(prisma: PrismaClient): Router {
           return {
             key,
             isEnabled: setting ? setting.isEnabled : true,
-            priority: setting ? setting.priority : key === 'apollo' ? 1 : key === 'hunter' ? 2 : key === 'snov' ? 3 : 4,
+            priority: setting
+              ? setting.priority
+              : key === 'tomba'
+              ? 1
+              : key === 'apollo'
+              ? 2
+              : key === 'hunter'
+              ? 3
+              : key === 'snov'
+              ? 4
+              : 5,
             hasKey: resolved.isConfigured,
             isConfigured: resolved.isConfigured,
             source: resolved.source,
@@ -108,7 +119,8 @@ export function createSettingsRouter(prisma: PrismaClient): Router {
       const resolved = await resolver.resolve(key);
 
       let provider;
-      if (key === 'apollo') provider = new ApolloProvider(resolved.apiKey);
+      if (key === 'tomba') provider = new TombaProvider(resolved.apiKey, resolved.secret);
+      else if (key === 'apollo') provider = new ApolloProvider(resolved.apiKey);
       else if (key === 'hunter') provider = new HunterProvider(resolved.apiKey);
       else if (key === 'snov') provider = new SnovProvider(resolved.apiKey, resolved.secret);
       else if (key === 'official_website') provider = new OfficialWebProvider();
@@ -116,16 +128,18 @@ export function createSettingsRouter(prisma: PrismaClient): Router {
 
       const health = await provider.healthCheck();
 
+      const healthStatus = health.status || (health.healthy ? 'healthy' : 'error');
+
       await prisma.providerSetting.upsert({
         where: { providerKey: key },
         update: {
-          healthStatus: health.healthy ? 'healthy' : 'error',
+          healthStatus,
           lastHealthCheck: new Date(),
           lastErrorMessage: health.healthy ? null : health.message,
         },
         create: {
           providerKey: key,
-          healthStatus: health.healthy ? 'healthy' : 'error',
+          healthStatus,
           lastHealthCheck: new Date(),
           lastErrorMessage: health.healthy ? null : health.message,
         },
