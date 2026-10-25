@@ -3,6 +3,48 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model JobOpening {
+  id                  String                 @id @default(uuid())
+  companyId           String
+  normalizedCompanyName String
+  sourceProvider      String
+  sourceUrl           String
+  jobUrl              String
+  normalizedJobUrl    String?
+  externalId          String?
+  dedupeKey           String
+  originalTitle       String
+  normalizedTitle     String
+  originalLocation    String?
+  normalizedLocation  String?
+  description         String?
+  firstSeenAt         DateTime               @default(now())
+  lastSeenAt          DateTime               @default(now())
+  lastCheckedAt       DateTime               @default(now())
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  company             Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  discoveries         JobOpeningDiscovery[]
+
+  @@unique([companyId, dedupeKey])
+  @@index([companyId, normalizedTitle])
+  @@index([sourceProvider, externalId])
+}
+
+model JobOpeningDiscovery {
+  id                  String          @id @default(uuid())
+  jobOpeningId        String
+  discoveryRunItemId  String
+  matchedRole         String
+  matchedLocation     String?
+  createdAt           DateTime        @default(now())
+  jobOpening          JobOpening      @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
+  discoveryRunItem    DiscoveryRunItem @relation(fields: [discoveryRunItemId], references: [id], onDelete: Cascade)
+
+  @@unique([jobOpeningId, discoveryRunItemId])
+  @@index([discoveryRunItemId])
+}
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -20,6 +62,7 @@ model Company {
   updatedAt        DateTime          @updatedAt
   contacts         Contact[]
   discoveryItems   DiscoveryRunItem[]
+  jobOpenings      JobOpening[]
 
   @@index([name])
   @@index([normalizedDomain])
@@ -132,8 +175,12 @@ model DiscoveryRunItem {
   companyName      String
   companyDomain    String?
   targetRolesJson  String        // JSON array of strings
+  targetLocationsJson String     @default("[]")
   status           String        // "waiting", "resolving_company", "searching_contacts", "finding_emails", "verifying", "completed", "failed"
   providersTriedJson String      // JSON array e.g. ["apollo", "hunter"]
+  jobDiscoveryStatus String      @default("pending")
+  jobDiscoveryMessage String?
+  jobsFound        Int           @default(0)
   contactsFound    Int           @default(0)
   errorMessage     String?
   createdAt        DateTime      @default(now())
@@ -141,6 +188,7 @@ model DiscoveryRunItem {
 
   discoveryRun     DiscoveryRun  @relation(fields: [discoveryRunId], references: [id], onDelete: Cascade)
   company          Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  jobDiscoveries   JobOpeningDiscovery[]
 
   @@index([discoveryRunId])
   @@index([status])

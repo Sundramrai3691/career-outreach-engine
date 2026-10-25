@@ -90,6 +90,8 @@ export const DiscoveryRunsList: React.FC<DiscoveryRunsListProps> = ({
                         <span className="badge badge-verified">Completed</span>
                       ) : r.status === 'completed_no_results' ? (
                         <span className="badge badge-accept_all">0 Results</span>
+                      ) : r.status === 'completed_jobs_only' ? (
+                        <span className="badge badge-verified">Jobs Found; Contacts Not Run</span>
                       ) : r.status === 'waiting_for_credentials' ? (
                         <span className="badge badge-invalid">Missing Credentials</span>
                       ) : r.status === 'running' ? (

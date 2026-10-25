@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { BulkCompanyDiscoveryInputSchema } from '../models/validation.js';
 import { DiscoveryOrchestrator } from '../services/contact-discovery/discovery.orchestrator.js';
 import { BudgetService } from '../services/provider-budget/budget.service.js';
+import { NormalizerService } from '../services/normalizer.service.js';
 
 const CURATED_COMPANIES = [
   { name: 'Stripe', domain: 'stripe.com' },
@@ -189,7 +190,20 @@ export function createDiscoveryRouter(
   router.post('/start', async (req, res, next) => {
     try {
       const parsed = BulkCompanyDiscoveryInputSchema.parse(req.body);
-      const runId = await orchestrator.startDiscovery(parsed.companies, parsed.config);
+      const companies = await Promise.all(parsed.companies.map(async (target) => {
+        if (target.domain) return target;
+        const normalizedName = NormalizerService.normalizeCompanyName(target.name).toLowerCase();
+        const curated = CURATED_COMPANIES.find(
+          (company) => NormalizerService.normalizeCompanyName(company.name).toLowerCase() === normalizedName
+        );
+        if (curated) return { ...target, domain: curated.domain };
+        const existing = await prisma.company.findFirst({
+          where: { name: target.name },
+          select: { domain: true },
+        });
+        return { ...target, domain: existing?.domain || undefined };
+      }));
+      const runId = await orchestrator.startDiscovery(companies, parsed.config);
       res.status(202).json({
         success: true,
         runId,
@@ -228,6 +242,12 @@ export function createDiscoveryRouter(
         include: {
           items: {
             orderBy: { createdAt: 'asc' },
+            include: {
+              jobDiscoveries: {
+                include: { jobOpening: true },
+                orderBy: { createdAt: 'asc' },
+              },
+            },
           },
         },
       });

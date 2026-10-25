@@ -28,6 +28,7 @@ export const NewDiscovery: React.FC<NewDiscoveryProps> = ({
 }) => {
   // LinkedIn-style multi-select search states
   const [companies, setCompanies] = useState<string[]>(['Stripe', 'Datadog']);
+  const [companyDomainsText, setCompanyDomainsText] = useState('');
   const [roles, setRoles] = useState<string[]>([
     'Technical Recruiter',
     'Senior Technical Recruiter',
@@ -105,13 +106,22 @@ export const NewDiscovery: React.FC<NewDiscoveryProps> = ({
       return;
     }
 
+    const companyDomains = companyDomainsText.split(/\r?\n/).map((domain) => domain.trim());
+    while (companyDomains.length > 0 && !companyDomains[companyDomains.length - 1]) companyDomains.pop();
+    if (companyDomains.some(Boolean) && companyDomains.length !== companies.length) {
+      setError('Enter one company domain per company, in the same order, or clear the domain list.');
+      return;
+    }
+
     try {
       setIsSubmitting(true);
 
       const payload = {
-        companies: companies.map((name) => ({
+        companies: companies.map((name, index) => ({
           name,
+          domain: companyDomains[index] || undefined,
           targetRoles: roles,
+          locations,
           location: locations.length > 0 ? locations.join(', ') : undefined,
           jobUrl: jobUrl.trim() || undefined,
           notes: notes.trim() || undefined,
@@ -154,7 +164,7 @@ export const NewDiscovery: React.FC<NewDiscoveryProps> = ({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.75rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-            <h2>Discover Contacts</h2>
+            <h2>Discover Jobs & Contacts</h2>
             <span
               style={{
                 fontSize: '0.6875rem',
@@ -170,7 +180,7 @@ export const NewDiscovery: React.FC<NewDiscoveryProps> = ({
             </span>
           </div>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '0.25rem' }}>
-            Find recruiters and hiring managers across multiple target companies with verified direct emails.
+            Find live role-matched openings from public sources. Contact discovery is a separate stage; a job post does not identify its hiring manager or email.
           </p>
         </div>
 
@@ -268,6 +278,19 @@ export const NewDiscovery: React.FC<NewDiscoveryProps> = ({
                 </button>
               ))}
             </div>
+            <div className="form-group" style={{ marginTop: '1rem', marginBottom: 0 }}>
+              <label className="form-label">Company domains (optional)</label>
+              <textarea
+                className="form-input"
+                rows={Math.min(Math.max(companies.length, 2), 5)}
+                value={companyDomainsText}
+                onChange={(e) => setCompanyDomainsText(e.target.value)}
+                placeholder={'stripe.com\ndatadoghq.com'}
+              />
+              <small style={{ color: 'var(--text-muted)' }}>
+                Optional: one domain per company, in the same order. Used only for official-site fallback; Greenhouse and Lever boards require explicit server configuration.
+              </small>
+            </div>
           </div>
 
           {/* 2. Target Roles */}
@@ -331,7 +354,7 @@ export const NewDiscovery: React.FC<NewDiscoveryProps> = ({
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
                 <LinkIcon size={14} color="var(--text-muted)" />
-                Target Job Listing URL (Optional)
+                Official Careers or Job Page URL (Optional)
               </label>
               <input
                 type="url"

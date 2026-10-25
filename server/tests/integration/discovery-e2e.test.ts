@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { DiscoveryOrchestrator } from '../../src/services/contact-discovery/discovery.orchestrator.js';
 import { MockProvider } from '../../src/providers/mock/mock.provider.js';
+import { JobDiscoveryService } from '../../src/services/job-discovery/job-discovery.service.js';
 
 describe('Discovery Pipeline End-to-End Flow', () => {
   let prisma: PrismaClient;
@@ -14,7 +15,22 @@ describe('Discovery Pipeline End-to-End Flow', () => {
     mockProviders.set('apollo', new MockProvider());
     mockProviders.set('hunter', new MockProvider());
 
-    orchestrator = new DiscoveryOrchestrator(prisma, mockProviders);
+    const jobDiscovery = new JobDiscoveryService(prisma, [], undefined, () => ({
+      name: 'official_careers',
+      discover: async (company) => [{
+        externalId: `fixture-${company.id}`,
+        title: company.name === 'Datadog'
+          ? 'Head of Talent Acquisition'
+          : company.name === 'Vercel'
+          ? 'Recruiter'
+          : 'Technical Recruiter',
+        location: 'San Francisco, CA',
+        description: 'Mock public job source fixture.',
+        jobUrl: `https://careers.${company.domain}/jobs/${encodeURIComponent(company.id)}`,
+        sourceUrl: `https://careers.${company.domain}/careers`,
+      }],
+    }));
+    orchestrator = new DiscoveryOrchestrator(prisma, mockProviders, jobDiscovery);
   });
 
   afterAll(async () => {
@@ -69,6 +85,7 @@ describe('Discovery Pipeline End-to-End Flow', () => {
     expect(run?.processedCompanies).toBe(3);
     expect(run?.contactsFound).toBeGreaterThan(0);
     expect(run?.creditsConsumed).toBeGreaterThan(0);
+    expect(run?.items.every((item) => item.jobsFound === 1)).toBe(true);
 
     // Verify persisted contacts in DB
     const contacts = await prisma.contact.findMany({
@@ -80,6 +97,13 @@ describe('Discovery Pipeline End-to-End Flow', () => {
 
     expect(contacts.length).toBeGreaterThan(0);
 
+    const jobOpenings = await prisma.jobOpening.findMany({
+      where: { companyId: { in: (run?.items || []).map((item) => item.companyId!).filter(Boolean) } },
+      include: { discoveries: true },
+    });
+    expect(jobOpenings.length).toBe(3);
+    expect(jobOpenings.every((job) => job.discoveries.length > 0)).toBe(true);
+
     // Check contact integrity
     for (const contact of contacts) {
       expect(contact.email).toMatch(/@/);
@@ -88,5 +112,5 @@ describe('Discovery Pipeline End-to-End Flow', () => {
       expect(contact.sources.length).toBeGreaterThan(0);
       expect(['verified', 'unverified', 'accept_all', 'unknown']).toContain(contact.emailStatus);
     }
-  });
+  }, 15000);
 });

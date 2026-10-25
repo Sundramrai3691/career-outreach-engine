@@ -18,6 +18,8 @@ import { BudgetService } from '../provider-budget/budget.service.js';
 import { EmailVerificationService } from '../email-verification/verifier.service.js';
 import { CredentialResolver } from '../../config/credential-resolver.js';
 import { logger } from '../../utils/logger.js';
+import { JobDiscoveryService } from '../job-discovery/job-discovery.service.js';
+import { JobDiscoveryOutcome } from '../job-discovery/job.types.js';
 
 export class DiscoveryOrchestrator {
   private providers: Map<ProviderName, IContactProvider> = new Map();
@@ -26,15 +28,18 @@ export class DiscoveryOrchestrator {
   private credentialResolver: CredentialResolver;
   private cancelledRuns: Set<string> = new Set();
   private hasCustomProviders: boolean = false;
+  private jobDiscoveryService: JobDiscoveryService;
 
   constructor(
     private prisma: PrismaClient,
-    customProviders?: Map<ProviderName, IContactProvider>
+    customProviders?: Map<ProviderName, IContactProvider>,
+    jobDiscoveryService?: JobDiscoveryService
   ) {
     this.budgetService = new BudgetService(this.prisma);
     this.credentialResolver = new CredentialResolver(this.prisma);
     const hunter = new HunterProvider();
     this.verificationService = new EmailVerificationService(hunter);
+    this.jobDiscoveryService = jobDiscoveryService || new JobDiscoveryService(this.prisma);
 
     if (customProviders) {
       this.providers = customProviders;
@@ -82,23 +87,31 @@ export class DiscoveryOrchestrator {
       const cleanName = NormalizerService.normalizeCompanyName(target.name);
 
       // Upsert company
-      const companyRecord = await this.prisma.company.upsert({
-        where: normalizedDomain ? { domain: normalizedDomain } : { id: 'placeholder-company-id' },
-        update: {
-          name: cleanName,
-          location: target.location || undefined,
-          jobUrl: target.jobUrl || undefined,
-          notes: target.notes || undefined,
-        },
-        create: {
-          name: cleanName,
-          domain: normalizedDomain,
-          normalizedDomain,
-          location: target.location,
-          jobUrl: target.jobUrl,
-          notes: target.notes,
-        },
-      });
+      const existingCompany = normalizedDomain
+        ? await this.prisma.company.findUnique({ where: { domain: normalizedDomain } })
+        : await this.prisma.company.findFirst({ where: { name: cleanName } });
+      const companyRecord = existingCompany
+        ? await this.prisma.company.update({
+            where: { id: existingCompany.id },
+            data: {
+              name: cleanName,
+              domain: normalizedDomain || existingCompany.domain,
+              normalizedDomain: normalizedDomain || existingCompany.normalizedDomain,
+              location: target.locations?.join(', ') || target.location || undefined,
+              jobUrl: target.jobUrl || undefined,
+              notes: target.notes || undefined,
+            },
+          })
+        : await this.prisma.company.create({
+            data: {
+              name: cleanName,
+              domain: normalizedDomain,
+              normalizedDomain,
+              location: target.locations?.join(', ') || target.location,
+              jobUrl: target.jobUrl,
+              notes: target.notes,
+            },
+          });
 
       await this.prisma.discoveryRunItem.create({
         data: {
@@ -107,6 +120,7 @@ export class DiscoveryOrchestrator {
           companyName: cleanName,
           companyDomain: normalizedDomain,
           targetRolesJson: JSON.stringify(target.targetRoles),
+          targetLocationsJson: JSON.stringify(target.locations || (target.location ? [target.location] : [])),
           status: 'waiting',
           providersTriedJson: JSON.stringify([]),
         },
@@ -131,6 +145,24 @@ export class DiscoveryOrchestrator {
     });
 
     if (!run) return;
+
+    const jobOutcomes: Array<JobDiscoveryOutcome & { companyName: string }> = [];
+    for (const item of run.items) {
+      const targetRoles: string[] = JSON.parse(item.targetRolesJson);
+      const targetLocations: string[] = JSON.parse(item.targetLocationsJson || '[]');
+      const outcome = await this.jobDiscoveryService.discoverForRunItem(
+        item.id,
+        {
+          id: item.companyId || item.company?.id || '',
+          name: item.companyName,
+          domain: item.companyDomain || item.company?.domain,
+          careersUrl: item.company?.jobUrl,
+        },
+        targetRoles,
+        targetLocations
+      );
+      jobOutcomes.push({ companyName: item.companyName, ...outcome });
+    }
 
     // 1. Dynamically resolve credentials for all providers
     const providerStatusMap = new Map<ProviderName, boolean>();
@@ -164,6 +196,11 @@ export class DiscoveryOrchestrator {
 
     // If none of the selected providers have credentials configured
     if (configuredPriority.length === 0) {
+      const matchedJobs = jobOutcomes.reduce((total, outcome) => total + outcome.jobsFound, 0);
+      const incompleteJobs = jobOutcomes.filter(
+        (outcome) => outcome.status === 'provider_failure' || outcome.status === 'rate_limited'
+      );
+      const unsupportedJobs = jobOutcomes.filter((outcome) => outcome.status === 'unsupported_source');
       for (const item of run.items) {
         await this.prisma.discoveryRunItem.update({
           where: { id: item.id },
@@ -178,9 +215,16 @@ export class DiscoveryOrchestrator {
       await this.prisma.discoveryRun.update({
         where: { id: runId },
         data: {
-          status: 'waiting_for_credentials',
+          processedCompanies: run.totalCompanies,
           completedAt: new Date(),
-          errorMessage: 'No configured discovery providers have valid API credentials. Please set API keys in Settings or .env.',
+          status: matchedJobs > 0 ? 'completed_jobs_only' : 'waiting_for_credentials',
+          errorMessage: matchedJobs > 0
+            ? `Job discovery saved ${matchedJobs} matching opening(s). Contact discovery was not run because no selected contact provider has credentials. Job postings do not identify a hiring manager or their email.`
+            : incompleteJobs.length > 0
+            ? `Job search did not complete for ${incompleteJobs.map((outcome) => `${outcome.companyName}: ${outcome.message}`).join(' | ')} Contact discovery was not run because no selected contact provider has credentials.`
+            : unsupportedJobs.length === run.items.length
+            ? 'No supported public job source was identified. Contact discovery was not run because no selected contact provider has credentials.'
+            : 'Job search completed with no matching openings. Contact discovery was not run because no selected contact provider has credentials.',
         },
       });
       return;
@@ -188,7 +232,9 @@ export class DiscoveryOrchestrator {
 
     let totalDiscoveredContacts = 0;
     let totalCreditsSpent = 0;
-    const runErrors: string[] = [];
+    const runErrors: string[] = jobOutcomes
+      .filter((outcome) => outcome.status === 'provider_failure' || outcome.status === 'rate_limited')
+      .map((outcome) => `${outcome.companyName} job discovery (${outcome.status}: ${outcome.message})`);
 
     for (const item of run.items) {
       if (this.cancelledRuns.has(runId)) {

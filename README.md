@@ -45,6 +45,13 @@ Built with **React**, **TypeScript**, **Vite**, **Node.js**, **Express**, **Pris
 - **Budget & Credit Protection:** Pre-flight cost estimation, hard spending caps per provider, and zero-spend free mode.
 - **Persistent Job Model:** Real-time progress updates per company (`waiting` ➔ `resolving_company` ➔ `searching_contacts` ➔ `finding_emails` ➔ `verifying` ➔ `completed`).
 
+### 🧭 Public Job Opening Discovery
+- Searches configured Greenhouse and Lever public job boards without API credentials, then uses a bounded official-company-careers-page fallback.
+- Requires an explicit `JOB_BOARD_REGISTRY` mapping for hosted boards; company names/domains are never used to guess a platform or board identifier.
+- Filters postings deterministically by selected roles and locations, and persists normalized fields, original titles/descriptions/URLs, source provenance, external IDs, and first/last-seen/check timestamps.
+- Shows matched postings and original links in run progress. Job discovery never creates a contact or guesses an email address; contact discovery remains a separate stage.
+- The official-site fallback checks `robots.txt` (including `Crawl-delay`), uses HTTPS on the supplied company domain, rate-limits requests per host, and does not scrape LinkedIn.
+
 ### 📊 Deduplicated Contact Management Table
 - Comprehensive filtering by company, role, provider source, email verification status, and outreach state.
 - **Honest Verification Categorization:** `verified`, `unverified`, `accept_all`, `unknown`, `invalid`, `unavailable`. (Does not collapse into misleading binary labels).
@@ -90,6 +97,26 @@ cd Referral_Engine
 # Install root, server, and client dependencies
 npm install
 ```
+
+### Public Job Board Configuration
+
+Greenhouse and Lever board identifiers must be confirmed from a company's own careers page or supplied by an administrator. Configure only confirmed mappings in the backend environment:
+
+```ini
+JOB_BOARD_REGISTRY=[{"domain":"company.example","provider":"greenhouse","board":"confirmed-board-token"},{"domain":"another.example","provider":"lever","board":"confirmed-site-name"}]
+```
+
+This is optional and requires no credentials. An absent mapping does not disable official careers-page fallback. Unknown/unsupported sources are reported as such rather than treated as an empty successful search.
+
+### Manual live-source smoke test
+
+1. Confirm a real employer's Greenhouse board token or Lever site name from its official careers page; do not guess it. Set the corresponding `JOB_BOARD_REGISTRY` entry and restart the backend.
+2. Start a discovery run in the UI for that employer, select a role and location known to be in a current posting, and provide the official company domain if it is not in the curated company list.
+3. Open run progress. Confirm the matched posting title/location, source provider, original link, and timestamps; open the link and confirm it is still live.
+4. Repeat the same search. The posting should update in place rather than create a duplicate. Check that contact results remain separate and that no email is inferred from the posting.
+5. For a company without a configured hosted board, test the official careers page fallback and verify its `robots.txt` policy permits the page.
+
+Automated tests mock all network responses. The smoke test above is the separate, manual live-provider validation step.
 
 ### Environment Setup
 Copy the sample environment file and configure your keys:

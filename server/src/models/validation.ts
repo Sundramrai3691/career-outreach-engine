@@ -4,6 +4,7 @@ export const CompanyInputSchema = z.object({
   name: z.string().min(1, 'Company name is required').trim(),
   domain: z.string().optional().nullable().transform((val) => val?.trim() || undefined),
   targetRoles: z.array(z.string().min(1)).min(1, 'At least one target role is required'),
+  locations: z.array(z.string().min(1).trim()).optional().default([]),
   location: z.string().optional().nullable().transform((val) => val?.trim() || undefined),
   jobUrl: z.string().url('Invalid job URL').optional().nullable().or(z.literal('')).transform((val) => val?.trim() || undefined),
   notes: z.string().optional().nullable().transform((val) => val?.trim() || undefined),
@@ -16,7 +17,7 @@ export const BulkCompanyDiscoveryInputSchema = z.object({
     allowEnrichment: z.boolean().default(false),
     freeFirstMode: z.boolean().default(true),
     verifyEmails: z.boolean().default(true),
-    providerPriority: z.array(z.enum(['apollo', 'hunter', 'snov', 'mock'])).optional(),
+    providerPriority: z.array(z.enum(['apollo', 'hunter', 'snov', 'mock', 'tomba', 'official_website'])).optional(),
   }).default({}),
 });
 

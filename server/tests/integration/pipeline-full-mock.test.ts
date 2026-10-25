@@ -6,6 +6,7 @@ import { NativeGmailService } from '../../src/services/gmail/gmail.service.js';
 import { DiscoveryOrchestrator } from '../../src/services/contact-discovery/discovery.orchestrator.js';
 import { IContactProvider } from '../../src/providers/base.provider.js';
 import { ProviderName } from '../../src/models/types.js';
+import { JobDiscoveryService } from '../../src/services/job-discovery/job-discovery.service.js';
 
 // Hoist Google API mocks
 const mocks = vi.hoisted(() => ({
@@ -58,6 +59,38 @@ vi.mock('googleapis', () => ({
 }));
 
 describe('Complete Outreach Pipeline with Fallbacks & Safe Gmail Drafts', () => {
+  const noNetworkJobDiscovery = {
+    discoverForRunItem: vi.fn().mockResolvedValue({
+      status: 'unsupported_source',
+      jobsFound: 0,
+      message: 'Job discovery is not part of this contact-pipeline test.',
+      providersTried: [],
+    }),
+  } as unknown as JobDiscoveryService;
+  const terminalRunStatuses = new Set([
+    'completed',
+    'completed_with_results',
+    'completed_no_results',
+    'completed_jobs_only',
+    'partially_completed',
+    'waiting_for_credentials',
+    'blocked_by_provider',
+    'failed',
+    'cancelled',
+  ]);
+
+  async function waitForDiscoveryRun(runId: string): Promise<any> {
+    for (let attempt = 0; attempt < 120; attempt++) {
+      const run = await prisma.discoveryRun.findUnique({
+        where: { id: runId },
+        include: { items: true },
+      });
+      if (run && terminalRunStatuses.has(run.status)) return run;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(`Discovery run ${runId} did not reach a terminal state.`);
+  }
+
   let prisma: PrismaClient;
   let importService: ContactImportService;
   let workspaceService: GoogleWorkspaceService;
@@ -117,7 +150,7 @@ InvalidRow,Developer,No Email Here,,manual_import,unknown`;
     });
     expect(jordan).toBeDefined();
     expect(jordan?.sources.length).toBeGreaterThanOrEqual(2);
-  });
+  }, 15000);
 
   it('Step 3 & 4: Selects imported contacts and prepares Google Mail Merge (Sheets + Docs template)', async () => {
     const uniqueSuffix = Date.now();
@@ -236,7 +269,7 @@ Acme Corp,Engineering Director,Sam Altman,sam.dir.${uniqueSuffix}@acmecorp.com,c
     const customProviders = new Map<ProviderName, IContactProvider>();
     customProviders.set('mock', mockSuccessProvider);
 
-    const orchestrator = new DiscoveryOrchestrator(prisma, customProviders);
+    const orchestrator = new DiscoveryOrchestrator(prisma, customProviders, noNetworkJobDiscovery);
 
     const runId = await orchestrator.startDiscovery(
       [
@@ -254,13 +287,7 @@ Acme Corp,Engineering Director,Sam Altman,sam.dir.${uniqueSuffix}@acmecorp.com,c
       }
     );
 
-    // Give background async orchestrator loop time to complete
-    await new Promise((resolve) => setTimeout(resolve, 800));
-
-    const finishedRun = await prisma.discoveryRun.findUnique({
-      where: { id: runId },
-      include: { items: true },
-    });
+    const finishedRun = await waitForDiscoveryRun(runId);
 
     expect(finishedRun).toBeDefined();
     expect(finishedRun?.contactsFound).toBe(1);
@@ -272,7 +299,7 @@ Acme Corp,Engineering Director,Sam Altman,sam.dir.${uniqueSuffix}@acmecorp.com,c
     });
     expect(savedContact).toBeDefined();
     expect(savedContact?.fullName).toBe('Robin Banks');
-  });
+  }, 15000);
 
   it('Step 7: Tomba domain discovery integrates with orchestrator and saves matched contacts', async () => {
     const uniqueDomain = `stripe-${Date.now()}.com`;
@@ -316,7 +343,7 @@ Acme Corp,Engineering Director,Sam Altman,sam.dir.${uniqueSuffix}@acmecorp.com,c
     const customProviders = new Map<ProviderName, IContactProvider>();
     customProviders.set('tomba', mockTombaProvider);
 
-    const orchestrator = new DiscoveryOrchestrator(prisma, customProviders);
+    const orchestrator = new DiscoveryOrchestrator(prisma, customProviders, noNetworkJobDiscovery);
 
     const runId = await orchestrator.startDiscovery(
       [
@@ -335,13 +362,7 @@ Acme Corp,Engineering Director,Sam Altman,sam.dir.${uniqueSuffix}@acmecorp.com,c
       }
     );
 
-    // Give background async orchestrator loop time to complete
-    await new Promise((resolve) => setTimeout(resolve, 800));
-
-    const finishedRun = await prisma.discoveryRun.findUnique({
-      where: { id: runId },
-      include: { items: true },
-    });
+    const finishedRun = await waitForDiscoveryRun(runId);
 
     expect(finishedRun).toBeDefined();
     expect(finishedRun?.contactsFound).toBe(1);
@@ -362,5 +383,5 @@ Acme Corp,Engineering Director,Sam Altman,sam.dir.${uniqueSuffix}@acmecorp.com,c
         country: 'US',
       })
     );
-  });
+  }, 15000);
 });

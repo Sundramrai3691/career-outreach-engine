@@ -11,6 +11,8 @@ import {
   Coins,
   Building,
   AlertCircle,
+  Briefcase,
+  ExternalLink,
 } from 'lucide-react';
 
 interface DiscoveryRunProgressProps {
@@ -44,8 +46,10 @@ export const DiscoveryRunProgress: React.FC<DiscoveryRunProgressProps> = ({
           data.status === 'completed' ||
           data.status === 'completed_with_results' ||
           data.status === 'completed_no_results' ||
+          data.status === 'completed_jobs_only' ||
           data.status === 'partially_completed' ||
           data.status === 'blocked_by_provider' ||
+          data.status === 'waiting_for_credentials' ||
           data.status === 'failed' ||
           data.status === 'cancelled'
         ) {
@@ -86,6 +90,7 @@ export const DiscoveryRunProgress: React.FC<DiscoveryRunProgressProps> = ({
     run?.status === 'completed' ||
     run?.status === 'completed_with_results' ||
     run?.status === 'completed_no_results' ||
+    run?.status === 'completed_jobs_only' ||
     run?.status === 'partially_completed' ||
     run?.status === 'blocked_by_provider' ||
     run?.status === 'waiting_for_credentials' ||
@@ -104,6 +109,8 @@ export const DiscoveryRunProgress: React.FC<DiscoveryRunProgressProps> = ({
         return <span className="badge badge-invalid"><AlertCircle size={12} /> Blocked by Provider</span>;
       case 'completed_no_results':
         return <span className="badge badge-accept_all"><AlertCircle size={12} /> Completed (0 Results)</span>;
+      case 'completed_jobs_only':
+        return <span className="badge badge-verified"><CheckCircle size={12} /> Jobs Found; Contacts Not Run</span>;
       case 'waiting_for_credentials':
         return <span className="badge badge-invalid"><Clock size={12} /> Credentials Missing</span>;
       case 'failed':
@@ -276,6 +283,59 @@ export const DiscoveryRunProgress: React.FC<DiscoveryRunProgressProps> = ({
             <span>{run.creditsConsumed} Credits Spent</span>
           </div>
         </div>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', marginTop: '0.75rem' }}>
+          Job postings are discovered independently. A posting is not evidence of a hiring manager's identity or email.
+        </p>
+      </div>
+
+      <div className="card" style={{ marginBottom: '1.5rem' }}>
+        <h3 style={{ fontSize: '1.125rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Briefcase size={18} color="#10b981" /> Matched Job Openings
+        </h3>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem', marginBottom: '1rem' }}>
+          Public postings matched against the selected roles and locations. Open each original posting to confirm it is still active.
+        </p>
+        {run.items?.some((item: any) => item.jobDiscoveries?.length > 0) ? (
+          <div style={{ display: 'grid', gap: '0.75rem' }}>
+            {run.items.flatMap((item: any) =>
+              (item.jobDiscoveries || []).map((discovery: any) => ({
+                ...discovery,
+                companyName: item.companyName,
+              }))
+            ).map((discovery: any) => {
+              const job = discovery.jobOpening;
+              return (
+                <article key={discovery.id} style={{ padding: '0.875rem 1rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{job.originalTitle}</div>
+                      <div style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem', marginTop: '0.25rem' }}>
+                        {discovery.companyName}{job.originalLocation ? ` · ${job.originalLocation}` : ''}
+                        {` · Match: ${discovery.matchedRole}`}
+                      </div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                        Source: {job.sourceProvider} · checked {new Date(job.lastCheckedAt).toLocaleString()}
+                        {' · '}
+                        <a href={job.sourceUrl} target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>Source record</a>
+                      </div>
+                    </div>
+                    <a href={job.jobUrl} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">
+                      Original posting <ExternalLink size={13} />
+                    </a>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+            {run.status === 'running' && run.items?.some((item: any) =>
+              item.jobDiscoveryStatus === 'pending' || item.jobDiscoveryStatus === 'searching'
+            )
+              ? 'Searching public job sources…'
+              : 'No matching public postings have been saved for this run.'}
+          </div>
+        )}
       </div>
 
       {/* Per-Company Live Pipeline Table */}

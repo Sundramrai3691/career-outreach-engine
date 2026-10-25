@@ -41,6 +41,7 @@ export type DiscoveryRunStatus =
   | 'completed'
   | 'completed_with_results'
   | 'completed_no_results'
+  | 'completed_jobs_only'
   | 'partially_completed'
   | 'waiting_for_credentials'
   | 'blocked_by_provider'
@@ -51,6 +52,7 @@ export interface CompanyTargetInput {
   name: string;
   domain?: string;
   targetRoles: string[];
+  locations?: string[];
   location?: string;
   jobUrl?: string;
   notes?: string;

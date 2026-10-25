@@ -327,3 +327,14 @@ This document establishes the official integration specifications, endpoint capa
 3. **Enrichment Gate:** Bulk enrichment on Apollo is strictly guarded by an explicit user toggle (`allowEnrichment = true`) and spending cap.
 4. **Hard Stopping Limit:** If credit balance drops below 1 or reaches the user's configured run limit, the discovery orchestrator halts further credit-consuming requests and saves all existing contacts.
 5. **No Blind Deductions:** Failed searches (e.g. Hunter returning 0 contacts) consume 0 credits and are recorded as 0 cost.
+# Public job discovery (credential-free)
+
+| Source | Request | Public response mapping | Discovery rule |
+|---|---|---|---|
+| Greenhouse Job Board API | `GET https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs?content=true` | `jobs[].id`, `title`, `location.name`, `content`, `absolute_url` | Board token is accepted only from an explicit `JOB_BOARD_REGISTRY` entry confirmed from the employer's own careers page/configuration. |
+| Lever Postings API | `GET https://api.lever.co/v0/postings/{site}?mode=json` | `id`, `text`, `categories.location`, `descriptionPlain`/`description`, `hostedUrl` | Site name is accepted only from an explicit `JOB_BOARD_REGISTRY` entry confirmed from the employer's own careers page/configuration. |
+| Official careers fallback | HTTPS page on the supplied/known company domain, preceded by `/robots.txt` | Public job links and page-visible title/location context | Same-domain careers page only; obeys disallow rules, caps results, and rate-limits requests. No LinkedIn scraping or contact/email inference. |
+
+The registry format is a JSON array in `JOB_BOARD_REGISTRY`, for example:
+`[{"domain":"company.example","provider":"greenhouse","board":"confirmed-board-token"}]`.
+There are no default board slugs and no API credentials are required. Provider responses are treated as errors on HTTP failures, 429 responses, malformed JSON, or invalid response shapes. See `README.md` for the manual live-source smoke test. Automated provider tests use fixtures and do not contact public services.

@@ -2,7 +2,33 @@
 
 > **Specification Reference:** Automated Contact Discovery and Google Mail-Merge Pipeline  
 > **Date:** October 2026  
-> **Status:** Completed, Verified, and Production-Ready
+> **Status:** Contact-pipeline report; public job discovery is documented in the update below. No production-readiness claim is made for live employer-board coverage.
+
+## 0. Public Job Discovery Update (October 25, 2026)
+
+### Delivered
+- Added credential-free public job discovery to existing discovery runs, separate from contact identity/email discovery.
+- Added Greenhouse Job Board API support at `GET https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs?content=true` and Lever Postings API support at `GET https://api.lever.co/v0/postings/{site}?mode=json`.
+- Platform identifiers are used only when explicitly listed in `JOB_BOARD_REGISTRY`; company names/domains never imply or guess a board identifier.
+- Added an HTTPS same-company-domain careers fallback that checks `robots.txt`, honors disallow rules and `Crawl-delay`, and rate-limits requests. It is limited to static page/link extraction and does not scrape LinkedIn or infer contacts.
+- Added persisted `JobOpening` and `JobOpeningDiscovery` records. Stored values include normalized company/title/location/job URL, original title/location/description/job URL, source provider/source URL, external ID, first/last seen and last checked timestamps, plus matched role/location per run.
+- Updated Discover and run-progress screens to show matched postings and original/source links; job results are not contacts.
+
+### Automated verification (all network responses mocked)
+- `npm --prefix server run db:push` — passed; additive schema synchronized without resetting existing data.
+- `npm --prefix server test` — passed, 9 test files / 54 tests.
+- `npm run build` — passed; backend TypeScript compilation and frontend TypeScript/production Vite build.
+- New tests cover Greenhouse/Lever response fixtures, official-page robots rules and link extraction, role/location matching, idempotent external-ID and URL fallback deduplication, provider/rate-limit/unsupported outcomes, and orchestrator persistence.
+
+### Manual live validation (not equivalent to employer-board certification)
+- Ran the compiled Lever adapter against Lever's documented public demo site `leverdemo` (`https://api.lever.co/v0/postings/leverdemo?mode=json`): the live endpoint returned 10 postings, including `Customer Success Manager` in Atlanta. The feed identifies its sample posting as a test job; this validates the public request/response path, not a production employer vacancy.
+- Checked the Greenhouse endpoint using the `vaulttec` example present in Greenhouse's documentation; it returned HTTP 404. No actual employer Greenhouse board was validated.
+- Official reference pages checked: [Greenhouse Job Board API](https://developers.greenhouse.io/job-board.html) and [Lever Postings API](https://github.com/lever/postings-api).
+
+### Limitations and next blocker
+- A confirmed per-employer Greenhouse board token or Lever site name must be supplied in `JOB_BOARD_REGISTRY`; there is intentionally no automatic guessing or provider discovery. The highest-priority next step is validating and configuring board IDs for the intended company set, then repeating the manual smoke test against live employer postings.
+- The official fallback handles static, anchor-linked HTML only. JavaScript-rendered career boards, cross-domain ATS pages not exposed by a same-domain link, and sites disallowing the path are reported as unsupported rather than silently treated as empty searches.
+- Automated tests are mock-only. Live validation of one Lever demo feed does not certify production employer data or a Greenhouse integration for a specific company. Follow the manual smoke procedure in `README.md`.
 
 ---
 
