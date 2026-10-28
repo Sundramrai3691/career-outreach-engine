@@ -18,7 +18,34 @@ export const BulkCompanyDiscoveryInputSchema = z.object({
     freeFirstMode: z.boolean().default(true),
     verifyEmails: z.boolean().default(true),
     providerPriority: z.array(z.enum(['apollo', 'hunter', 'snov', 'mock', 'tomba', 'official_website'])).optional(),
+    jobProfile: z.object({
+      targetRoles: z.array(z.string().trim().min(1)).default([]),
+      excludedRoles: z.array(z.string().trim().min(1)).default([]),
+      technicalSkills: z.array(z.string().trim().min(1)).default([]),
+      requiredSkills: z.array(z.string().trim().min(1)).default([]),
+      graduationYear: z.number().int().min(2000).max(2100).optional().nullable(),
+      eligibleGraduationYearMin: z.number().int().min(2000).max(2100).optional().nullable(),
+      eligibleGraduationYearMax: z.number().int().min(2000).max(2100).optional().nullable(),
+      experienceLevels: z.array(z.string().trim().min(1)).default([]),
+      locations: z.array(z.string().trim().min(1)).default([]),
+      remotePreference: z.enum(['any', 'remote_preferred', 'remote_only']).default('any'),
+      excludedLocations: z.array(z.string().trim().min(1)).default([]),
+    }).optional(),
   }).default({}),
+});
+
+export const CandidateProfileSchema = z.object({
+  targetRoles: z.array(z.string().trim().min(1)).default([]),
+  excludedRoles: z.array(z.string().trim().min(1)).default([]),
+  technicalSkills: z.array(z.string().trim().min(1)).default([]),
+  requiredSkills: z.array(z.string().trim().min(1)).default([]),
+  graduationYear: z.number().int().min(2000).max(2100).optional().nullable(),
+  eligibleGraduationYearMin: z.number().int().min(2000).max(2100).optional().nullable(),
+  eligibleGraduationYearMax: z.number().int().min(2000).max(2100).optional().nullable(),
+  experienceLevels: z.array(z.string().trim().min(1)).default([]),
+  locations: z.array(z.string().trim().min(1)).default([]),
+  remotePreference: z.enum(['any', 'remote_preferred', 'remote_only']).default('any'),
+  excludedLocations: z.array(z.string().trim().min(1)).default([]),
 });
 
 export const EmailTemplateSchema = z.object({

@@ -18,17 +18,27 @@ model JobOpening {
   originalLocation    String?
   normalizedLocation  String?
   description         String?
+  status              String                 @default("active")
+  lastChangeType      String                 @default("new")
+  lastChangeReason    String?
+  materialFingerprint String?
+  missingSuccessfulScans Int                @default(0)
+  lastRemovalScanAt   DateTime?
   firstSeenAt         DateTime               @default(now())
   lastSeenAt          DateTime               @default(now())
   lastCheckedAt       DateTime               @default(now())
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
   company             Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyJobSourceId  String?
+  companyJobSource    CompanyJobSource?      @relation(fields: [companyJobSourceId], references: [id], onDelete: SetNull)
   discoveries         JobOpeningDiscovery[]
+  history             JobOpeningEvent[]
 
   @@unique([companyId, dedupeKey])
   @@index([companyId, normalizedTitle])
   @@index([sourceProvider, externalId])
+  @@index([companyJobSourceId, status])
 }
 
 model JobOpeningDiscovery {
@@ -37,12 +47,86 @@ model JobOpeningDiscovery {
   discoveryRunItemId  String
   matchedRole         String
   matchedLocation     String?
+  fitScore            Int             @default(0)
+  fitStatus           String          @default("eligible")
+  fitDetailsJson      String          @default("{}")
+  changeType          String          @default("unchanged")
+  changeReason        String?
   createdAt           DateTime        @default(now())
   jobOpening          JobOpening      @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
   discoveryRunItem    DiscoveryRunItem @relation(fields: [discoveryRunItemId], references: [id], onDelete: Cascade)
 
   @@unique([jobOpeningId, discoveryRunItemId])
   @@index([discoveryRunItemId])
+}
+
+model JobOpeningEvent {
+  id             String     @id @default(uuid())
+  jobOpeningId   String
+  eventType      String
+  reason         String
+  previousJson   String?
+  currentJson    String?
+  observedAt     DateTime   @default(now())
+  jobOpening     JobOpening @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
+
+  @@index([jobOpeningId, observedAt])
+}
+
+model CompanyJobSource {
+  id                    String       @id @default(uuid())
+  companyId             String
+  provider              String
+  identifier            String?
+  careersUrl            String?
+  isValidated           Boolean      @default(false)
+  status                String       @default("unvalidated")
+  lastScanAt            DateTime?
+  lastSuccessfulScanAt  DateTime?
+  lastFailureAt         DateTime?
+  latestError           String?
+  lastJobCount          Int          @default(0)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  company               Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  openings              JobOpening[]
+  scans                 JobSourceScan[]
+
+  @@unique([companyId, provider, identifier])
+  @@index([provider, status])
+}
+
+model JobSourceScan {
+  id            String           @id @default(uuid())
+  sourceId      String
+  runItemId     String
+  status        String
+  startedAt     DateTime         @default(now())
+  completedAt   DateTime?
+  postingsCount Int              @default(0)
+  matchedCount  Int              @default(0)
+  errorMessage  String?
+  source        CompanyJobSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  runItem       DiscoveryRunItem @relation(fields: [runItemId], references: [id], onDelete: Cascade)
+
+  @@index([sourceId, startedAt])
+  @@index([runItemId])
+}
+
+model CandidateProfile {
+  id                        String   @id @default("default")
+  targetRolesJson           String   @default("[]")
+  excludedRolesJson         String   @default("[]")
+  technicalSkillsJson       String   @default("[]")
+  requiredSkillsJson        String   @default("[]")
+  graduationYear            Int?
+  eligibleGraduationYearMin Int?
+  eligibleGraduationYearMax Int?
+  experienceLevelsJson      String   @default("[]")
+  locationsJson             String   @default("[]")
+  remotePreference          String   @default("any")
+  excludedLocationsJson     String   @default("[]")
+  updatedAt                 DateTime @updatedAt
 }
 
 generator client {
@@ -58,11 +142,13 @@ model Company {
   location         String?
   jobUrl           String?
   notes            String?
+  isJobWatchlisted Boolean           @default(false)
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   contacts         Contact[]
   discoveryItems   DiscoveryRunItem[]
   jobOpenings      JobOpening[]
+  jobSources       CompanyJobSource[]
 
   @@index([name])
   @@index([normalizedDomain])
@@ -161,6 +247,7 @@ model DiscoveryRun {
   startedAt        DateTime           @default(now())
   completedAt      DateTime?
   errorMessage     String?
+  candidateProfileJson String          @default("{}")
   
   items            DiscoveryRunItem[]
 
@@ -189,6 +276,7 @@ model DiscoveryRunItem {
   discoveryRun     DiscoveryRun  @relation(fields: [discoveryRunId], references: [id], onDelete: Cascade)
   company          Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
   jobDiscoveries   JobOpeningDiscovery[]
+  jobSourceScans   JobSourceScan[]
 
   @@index([discoveryRunId])
   @@index([status])

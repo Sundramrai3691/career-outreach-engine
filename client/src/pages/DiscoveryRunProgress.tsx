@@ -290,10 +290,10 @@ export const DiscoveryRunProgress: React.FC<DiscoveryRunProgressProps> = ({
 
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <h3 style={{ fontSize: '1.125rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Briefcase size={18} color="#10b981" /> Matched Job Openings
+          <Briefcase size={18} color="#10b981" /> Observed Job Openings
         </h3>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem', marginBottom: '1rem' }}>
-          Public postings matched against the selected roles and locations. Open each original posting to confirm it is still active.
+          Observed public postings with candidate-fit decisions and change status. Open each original posting to confirm it is still active.
         </p>
         {run.items?.some((item: any) => item.jobDiscoveries?.length > 0) ? (
           <div style={{ display: 'grid', gap: '0.75rem' }}>
@@ -304,6 +304,8 @@ export const DiscoveryRunProgress: React.FC<DiscoveryRunProgressProps> = ({
               }))
             ).map((discovery: any) => {
               const job = discovery.jobOpening;
+              let fitDetails: any = { matches: [], missing: [], exclusions: [] };
+              try { fitDetails = JSON.parse(discovery.fitDetailsJson || '{}'); } catch { /* retain empty fit details */ }
               return (
                 <article key={discovery.id} style={{ padding: '0.875rem 1rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -318,6 +320,23 @@ export const DiscoveryRunProgress: React.FC<DiscoveryRunProgressProps> = ({
                         {' · '}
                         <a href={job.sourceUrl} target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>Source record</a>
                       </div>
+                      <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                        This scan: {discovery.changeType} | Current: {job.status} ({job.lastChangeType}) | Fit: {discovery.fitStatus} ({discovery.fitScore}/100)
+                      </div>
+                      {(discovery.changeReason || job.lastChangeReason) && (
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                          Scan reason: {discovery.changeReason || 'None'}; latest change: {job.lastChangeReason || 'None'}
+                        </div>
+                      )}
+                      {fitDetails.matches?.length > 0 && (
+                        <div style={{ color: '#6ee7b7', fontSize: '0.75rem', marginTop: '0.25rem' }}>Matches: {fitDetails.matches.join('; ')}</div>
+                      )}
+                      {fitDetails.missing?.length > 0 && (
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem' }}>Not stated: {fitDetails.missing.join('; ')}</div>
+                      )}
+                      {fitDetails.exclusions?.length > 0 && (
+                        <div style={{ color: '#fca5a5', fontSize: '0.75rem', marginTop: '0.25rem' }}>Excluded: {fitDetails.exclusions.join('; ')}</div>
+                      )}
                     </div>
                     <a href={job.jobUrl} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">
                       Original posting <ExternalLink size={13} />
@@ -394,6 +413,11 @@ export const DiscoveryRunProgress: React.FC<DiscoveryRunProgressProps> = ({
                       {item.companyDomain && (
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.companyDomain}</div>
                       )}
+                      {item.jobDiscoveryStatus && item.jobDiscoveryStatus !== 'pending' && (
+                        <div style={{ fontSize: '0.75rem', color: item.jobDiscoveryStatus === 'matched' ? '#6ee7b7' : item.jobDiscoveryStatus === 'no_matches' ? 'var(--text-muted)' : '#fcd34d', marginTop: '0.25rem' }}>
+                          Jobs: {item.jobDiscoveryStatus}{item.jobDiscoveryMessage ? ` — ${item.jobDiscoveryMessage}` : ''}
+                        </div>
+                      )}
                       {item.errorMessage && (
                         <div style={{ fontSize: '0.75rem', color: '#fca5a5', marginTop: '0.25rem', lineHeight: 1.3 }}>
                           {item.errorMessage}
@@ -421,10 +445,14 @@ export const DiscoveryRunProgress: React.FC<DiscoveryRunProgressProps> = ({
                             bg = 'rgba(16, 185, 129, 0.15)';
                             color = '#6ee7b7';
                             border = 'rgba(16, 185, 129, 0.3)';
-                          } else if (pStatus === 'error') {
+                          } else if (['error', 'blocked', 'provider_failure', 'rate_limited'].includes(pStatus)) {
                             bg = 'rgba(239, 68, 68, 0.15)';
                             color = '#fca5a5';
                             border = 'rgba(239, 68, 68, 0.3)';
+                          } else if (pStatus === 'unsupported_source') {
+                            bg = 'rgba(245, 158, 11, 0.15)';
+                            color = '#fcd34d';
+                            border = 'rgba(245, 158, 11, 0.3)';
                           } else if (pStatus === 'skipped') {
                             bg = 'rgba(255, 255, 255, 0.03)';
                             color = 'var(--text-muted)';

@@ -39,6 +39,13 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  getCandidateProfile: () => request<any>('/discovery/profile'),
+
+  saveCandidateProfile: (profile: any) =>
+    request<any>('/discovery/profile', { method: 'PUT', body: JSON.stringify(profile) }),
+
+  getJobSourceCoverage: () => request<any>('/discovery/sources/coverage'),
+
   getDiscoveryRuns: () => request<any[]>('/discovery/runs'),
 
   getDiscoveryRun: (id: string) => request<any>(`/discovery/runs/${id}`),

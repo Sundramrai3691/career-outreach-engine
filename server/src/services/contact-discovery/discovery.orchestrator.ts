@@ -20,6 +20,7 @@ import { CredentialResolver } from '../../config/credential-resolver.js';
 import { logger } from '../../utils/logger.js';
 import { JobDiscoveryService } from '../job-discovery/job-discovery.service.js';
 import { JobDiscoveryOutcome } from '../job-discovery/job.types.js';
+import { CandidateProfileInput, EMPTY_CANDIDATE_PROFILE } from '../job-discovery/job-fit.service.js';
 
 export class DiscoveryOrchestrator {
   private providers: Map<ProviderName, IContactProvider> = new Map();
@@ -77,9 +78,33 @@ export class DiscoveryOrchestrator {
         allowEnrichment: config.allowEnrichment,
         freeFirstMode: config.freeFirstMode,
         verifyEmails: config.verifyEmails,
+        candidateProfileJson: JSON.stringify(config.jobProfile || EMPTY_CANDIDATE_PROFILE),
         startedAt: new Date(),
       },
     });
+
+    if (config.jobProfile) {
+      const profile = config.jobProfile;
+      const json = (values: string[]) => JSON.stringify(values);
+      const profileData = {
+        targetRolesJson: json(profile.targetRoles),
+        excludedRolesJson: json(profile.excludedRoles),
+        technicalSkillsJson: json(profile.technicalSkills),
+        requiredSkillsJson: json(profile.requiredSkills),
+        graduationYear: profile.graduationYear ?? null,
+        eligibleGraduationYearMin: profile.eligibleGraduationYearMin ?? null,
+        eligibleGraduationYearMax: profile.eligibleGraduationYearMax ?? null,
+        experienceLevelsJson: json(profile.experienceLevels),
+        locationsJson: json(profile.locations),
+        remotePreference: profile.remotePreference,
+        excludedLocationsJson: json(profile.excludedLocations),
+      };
+      await this.prisma.candidateProfile.upsert({
+        where: { id: 'default' },
+        create: { id: 'default', ...profileData },
+        update: profileData,
+      });
+    }
 
     // 2. Create DiscoveryRunItems for each company
     for (const target of companies) {
@@ -100,6 +125,7 @@ export class DiscoveryOrchestrator {
               location: target.locations?.join(', ') || target.location || undefined,
               jobUrl: target.jobUrl || undefined,
               notes: target.notes || undefined,
+              isJobWatchlisted: true,
             },
           })
         : await this.prisma.company.create({
@@ -110,6 +136,7 @@ export class DiscoveryOrchestrator {
               location: target.locations?.join(', ') || target.location,
               jobUrl: target.jobUrl,
               notes: target.notes,
+              isJobWatchlisted: true,
             },
           });
 
@@ -159,7 +186,8 @@ export class DiscoveryOrchestrator {
           careersUrl: item.company?.jobUrl,
         },
         targetRoles,
-        targetLocations
+        targetLocations,
+        run.candidateProfileJson ? JSON.parse(run.candidateProfileJson) as CandidateProfileInput : EMPTY_CANDIDATE_PROFILE
       );
       jobOutcomes.push({ companyName: item.companyName, ...outcome });
     }
@@ -198,7 +226,7 @@ export class DiscoveryOrchestrator {
     if (configuredPriority.length === 0) {
       const matchedJobs = jobOutcomes.reduce((total, outcome) => total + outcome.jobsFound, 0);
       const incompleteJobs = jobOutcomes.filter(
-        (outcome) => outcome.status === 'provider_failure' || outcome.status === 'rate_limited'
+        (outcome) => ['provider_failure', 'rate_limited', 'blocked'].includes(outcome.status)
       );
       const unsupportedJobs = jobOutcomes.filter((outcome) => outcome.status === 'unsupported_source');
       for (const item of run.items) {
@@ -233,7 +261,7 @@ export class DiscoveryOrchestrator {
     let totalDiscoveredContacts = 0;
     let totalCreditsSpent = 0;
     const runErrors: string[] = jobOutcomes
-      .filter((outcome) => outcome.status === 'provider_failure' || outcome.status === 'rate_limited')
+      .filter((outcome) => ['provider_failure', 'rate_limited', 'blocked'].includes(outcome.status))
       .map((outcome) => `${outcome.companyName} job discovery (${outcome.status}: ${outcome.message})`);
 
     for (const item of run.items) {

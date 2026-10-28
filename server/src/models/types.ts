@@ -184,6 +184,7 @@ export interface DiscoveryRunConfig {
   verifyEmails: boolean;
   providerPriority?: ProviderName[];
   includeOfficialWeb?: boolean;
+  jobProfile?: import('../services/job-discovery/job-fit.service.js').CandidateProfileInput;
 }
 
 export interface TemplateVariables {

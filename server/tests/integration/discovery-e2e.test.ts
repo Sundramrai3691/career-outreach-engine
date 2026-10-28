@@ -3,13 +3,17 @@ import { PrismaClient } from '@prisma/client';
 import { DiscoveryOrchestrator } from '../../src/services/contact-discovery/discovery.orchestrator.js';
 import { MockProvider } from '../../src/providers/mock/mock.provider.js';
 import { JobDiscoveryService } from '../../src/services/job-discovery/job-discovery.service.js';
+import { createIsolatedPrisma } from '../helpers/isolated-prisma.js';
 
 describe('Discovery Pipeline End-to-End Flow', () => {
   let prisma: PrismaClient;
+  let cleanupDatabase: () => Promise<void>;
   let orchestrator: DiscoveryOrchestrator;
 
   beforeAll(async () => {
-    prisma = new PrismaClient();
+    const isolated = await createIsolatedPrisma();
+    prisma = isolated.prisma;
+    cleanupDatabase = isolated.cleanup;
     const mockProviders = new Map();
     mockProviders.set('mock', new MockProvider());
     mockProviders.set('apollo', new MockProvider());
@@ -34,7 +38,7 @@ describe('Discovery Pipeline End-to-End Flow', () => {
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    if (cleanupDatabase) await cleanupDatabase();
   });
 
   it('runs complete multi-company discovery, waterfall fallback, deduplication, and database persistence', async () => {
@@ -103,6 +107,16 @@ describe('Discovery Pipeline End-to-End Flow', () => {
     });
     expect(jobOpenings.length).toBe(3);
     expect(jobOpenings.every((job) => job.discoveries.length > 0)).toBe(true);
+    expect(jobOpenings.every((job) => job.status === 'active' && job.lastChangeType === 'new')).toBe(true);
+    const watchlist = await prisma.company.findMany({
+      where: { id: { in: (run?.items || []).map((item) => item.companyId!).filter(Boolean) } },
+    });
+    expect(watchlist.every((company) => company.isJobWatchlisted)).toBe(true);
+    const trackedSources = await prisma.companyJobSource.findMany({
+      where: { companyId: { in: watchlist.map((company) => company.id) } },
+    });
+    expect(trackedSources).toHaveLength(3);
+    expect(trackedSources.every((source) => source.isValidated && source.status === 'success')).toBe(true);
 
     // Check contact integrity
     for (const contact of contacts) {

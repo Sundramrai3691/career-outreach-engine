@@ -34,6 +34,9 @@ export class GreenhouseJobsProvider implements JobSourceProvider {
     if (response.status === 404) {
       throw new JobSourceError('Configured Greenhouse board was not found.', 'unsupported_source');
     }
+    if (response.status === 401 || response.status === 403) {
+      throw new JobSourceError(`Greenhouse denied the public board request (HTTP ${response.status}).`, 'blocked');
+    }
     if (response.status === 429) {
       throw new JobSourceError('Greenhouse rate limit reached.', 'rate_limited');
     }
@@ -50,10 +53,11 @@ export class GreenhouseJobsProvider implements JobSourceProvider {
     if (!Array.isArray(payload.jobs)) {
       throw new JobSourceError('Greenhouse response did not contain a jobs array.', 'provider_failure');
     }
+    if (payload.jobs.some((job) => !job || job.id === undefined || typeof job.title !== 'string' || typeof job.absolute_url !== 'string')) {
+      throw new JobSourceError('Greenhouse response contains a malformed job record.', 'provider_failure');
+    }
 
-    return payload.jobs
-      .filter((job) => job && job.id !== undefined && typeof job.title === 'string' && typeof job.absolute_url === 'string')
-      .map((job) => ({
+    return payload.jobs.map((job) => ({
         externalId: String(job.id),
         title: job.title,
         location: job.location?.name,

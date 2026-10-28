@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { BulkCompanyDiscoveryInputSchema } from '../models/validation.js';
+import { BulkCompanyDiscoveryInputSchema, CandidateProfileSchema } from '../models/validation.js';
 import { DiscoveryOrchestrator } from '../services/contact-discovery/discovery.orchestrator.js';
 import { BudgetService } from '../services/provider-budget/budget.service.js';
 import { NormalizerService } from '../services/normalizer.service.js';
+import { summarizeJobSourceCoverage } from '../services/job-discovery/job-coverage.service.js';
 
 const CURATED_COMPANIES = [
   { name: 'Stripe', domain: 'stripe.com' },
@@ -67,6 +68,72 @@ export function createDiscoveryRouter(
 ): Router {
   const router = Router();
   const budgetService = new BudgetService(prisma);
+
+  router.get('/profile', async (_req, res, next) => {
+    try {
+      const stored = await prisma.candidateProfile.findUnique({ where: { id: 'default' } });
+      res.json(stored ? {
+        targetRoles: JSON.parse(stored.targetRolesJson),
+        excludedRoles: JSON.parse(stored.excludedRolesJson),
+        technicalSkills: JSON.parse(stored.technicalSkillsJson),
+        requiredSkills: JSON.parse(stored.requiredSkillsJson),
+        graduationYear: stored.graduationYear,
+        eligibleGraduationYearMin: stored.eligibleGraduationYearMin,
+        eligibleGraduationYearMax: stored.eligibleGraduationYearMax,
+        experienceLevels: JSON.parse(stored.experienceLevelsJson),
+        locations: JSON.parse(stored.locationsJson),
+        remotePreference: stored.remotePreference,
+        excludedLocations: JSON.parse(stored.excludedLocationsJson),
+      } : {
+        targetRoles: [], excludedRoles: [], technicalSkills: [], requiredSkills: [],
+        graduationYear: null, eligibleGraduationYearMin: null, eligibleGraduationYearMax: null,
+        experienceLevels: [], locations: [], remotePreference: 'any', excludedLocations: [],
+      });
+    } catch (err) { next(err); }
+  });
+
+  router.put('/profile', async (req, res, next) => {
+    try {
+      const profile = CandidateProfileSchema.parse(req.body);
+      const json = (values: string[]) => JSON.stringify(values);
+      const data = {
+        targetRolesJson: json(profile.targetRoles),
+        excludedRolesJson: json(profile.excludedRoles),
+        technicalSkillsJson: json(profile.technicalSkills),
+        requiredSkillsJson: json(profile.requiredSkills),
+        graduationYear: profile.graduationYear ?? null,
+        eligibleGraduationYearMin: profile.eligibleGraduationYearMin ?? null,
+        eligibleGraduationYearMax: profile.eligibleGraduationYearMax ?? null,
+        experienceLevelsJson: json(profile.experienceLevels),
+        locationsJson: json(profile.locations),
+        remotePreference: profile.remotePreference,
+        excludedLocationsJson: json(profile.excludedLocations),
+      };
+      await prisma.candidateProfile.upsert({ where: { id: 'default' }, create: { id: 'default', ...data }, update: data });
+      res.json({ success: true, profile });
+    } catch (err) { next(err); }
+  });
+
+  router.get('/sources/coverage', async (_req, res, next) => {
+    try {
+      const companies = await prisma.company.findMany({
+        where: { isJobWatchlisted: true },
+        orderBy: { name: 'asc' },
+        include: { jobSources: { orderBy: [{ provider: 'asc' }, { identifier: 'asc' }] } },
+      });
+      const rows = companies.map((company) => ({
+        companyId: company.id,
+        companyName: company.name,
+        domain: company.domain,
+        sources: company.jobSources,
+      }));
+      res.json({
+        measuredAt: new Date().toISOString(),
+        ...summarizeJobSourceCoverage(rows),
+        companies: rows,
+      });
+    } catch (err) { next(err); }
+  });
 
   /**
    * Fast autocomplete suggestions for companies, target roles, and locations

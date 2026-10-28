@@ -7,6 +7,7 @@ export type JobDiscoveryStatus =
   | 'no_matches'
   | 'partial_results'
   | 'unsupported_source'
+  | 'blocked'
   | 'rate_limited'
   | 'provider_failure';
 
@@ -40,7 +41,7 @@ export interface JobSourceProvider {
 export class JobSourceError extends Error {
   constructor(
     message: string,
-    readonly kind: 'rate_limited' | 'unsupported_source' | 'provider_failure'
+    readonly kind: 'rate_limited' | 'blocked' | 'unsupported_source' | 'provider_failure'
   ) {
     super(message);
     this.name = 'JobSourceError';
@@ -52,4 +53,20 @@ export interface JobDiscoveryOutcome {
   jobsFound: number;
   message: string;
   providersTried: Array<{ provider: JobSourceName; status: string; reason?: string }>;
+}
+
+export interface JobSourceCoverageRow {
+  companyId: string;
+  companyName: string;
+  domain?: string | null;
+  sources: Array<{
+    provider: JobSourceName;
+    identifier?: string | null;
+    careersUrl?: string | null;
+    isValidated: boolean;
+    status: string;
+    lastSuccessfulScanAt?: Date | null;
+    latestError?: string | null;
+    lastJobCount: number;
+  }>;
 }

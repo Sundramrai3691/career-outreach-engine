@@ -26,6 +26,15 @@ export const NewDiscovery: React.FC<NewDiscoveryProps> = ({
   onViewHistory,
   onNavigateToContacts,
 }) => {
+  const [excludedRoles, setExcludedRoles] = useState<string[]>([]);
+  const [technicalSkills, setTechnicalSkills] = useState<string[]>([]);
+  const [requiredSkills, setRequiredSkills] = useState<string[]>([]);
+  const [graduationYear, setGraduationYear] = useState('');
+  const [eligibleYearMin, setEligibleYearMin] = useState('');
+  const [eligibleYearMax, setEligibleYearMax] = useState('');
+  const [experienceLevels, setExperienceLevels] = useState<string[]>(['new_grad', 'junior']);
+  const [remotePreference, setRemotePreference] = useState<'any' | 'remote_preferred' | 'remote_only'>('any');
+  const [excludedLocations, setExcludedLocations] = useState<string[]>([]);
   // LinkedIn-style multi-select search states
   const [companies, setCompanies] = useState<string[]>(['Stripe', 'Datadog']);
   const [companyDomainsText, setCompanyDomainsText] = useState('');
@@ -56,6 +65,31 @@ export const NewDiscovery: React.FC<NewDiscoveryProps> = ({
   const [estimate, setEstimate] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sourceCoverage, setSourceCoverage] = useState<any>(null);
+
+  const parseList = (value: string) => value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
+  const formatList = (value: string[]) => value.join(', ');
+
+  useEffect(() => {
+    api.getCandidateProfile().then((profile) => {
+      if (profile.targetRoles?.length) setRoles(profile.targetRoles);
+      if (profile.locations?.length) setLocations(profile.locations);
+      setExcludedRoles(profile.excludedRoles || []);
+      setTechnicalSkills(profile.technicalSkills || []);
+      setRequiredSkills(profile.requiredSkills || []);
+      setGraduationYear(profile.graduationYear ? String(profile.graduationYear) : '');
+      setEligibleYearMin(profile.eligibleGraduationYearMin ? String(profile.eligibleGraduationYearMin) : '');
+      setEligibleYearMax(profile.eligibleGraduationYearMax ? String(profile.eligibleGraduationYearMax) : '');
+      setExperienceLevels(profile.experienceLevels || []);
+      setRemotePreference(profile.remotePreference || 'any');
+      setExcludedLocations(profile.excludedLocations || []);
+    }).catch((err) => console.error('Failed to load candidate job-fit profile', err));
+  }, []);
+
+  useEffect(() => {
+    api.getJobSourceCoverage().then(setSourceCoverage)
+      .catch((err) => console.error('Failed to load job source coverage', err));
+  }, []);
 
   // Recalculate cost estimate when parameters change
   useEffect(() => {
@@ -116,6 +150,19 @@ export const NewDiscovery: React.FC<NewDiscoveryProps> = ({
     try {
       setIsSubmitting(true);
 
+      const jobProfile = {
+        targetRoles: roles,
+        excludedRoles,
+        technicalSkills,
+        requiredSkills,
+        graduationYear: graduationYear ? Number(graduationYear) : null,
+        eligibleGraduationYearMin: eligibleYearMin ? Number(eligibleYearMin) : null,
+        eligibleGraduationYearMax: eligibleYearMax ? Number(eligibleYearMax) : null,
+        experienceLevels,
+        locations,
+        remotePreference,
+        excludedLocations,
+      };
       const payload = {
         companies: companies.map((name, index) => ({
           name,
@@ -132,9 +179,11 @@ export const NewDiscovery: React.FC<NewDiscoveryProps> = ({
           freeFirstMode,
           verifyEmails,
           providerPriority,
+          jobProfile,
         },
       };
 
+      await api.saveCandidateProfile(jobProfile);
       const res = await api.startDiscovery(payload);
       if (res.runId) {
         onRunStarted(res.runId);
@@ -228,6 +277,25 @@ export const NewDiscovery: React.FC<NewDiscoveryProps> = ({
         >
           <AlertCircle size={18} />
           <span>{error}</span>
+        </div>
+      )}
+
+      {sourceCoverage && (
+        <div className="card" style={{ marginBottom: '1rem', padding: '0.875rem 1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            <div>
+              <strong>Job source coverage: {sourceCoverage.coveragePercent}%</strong>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.2rem' }}>
+                {sourceCoverage.validatedMonitorable} validated of {sourceCoverage.totalCompanies} companies in the current database watchlist (denominator: {sourceCoverage.coverageDenominator}).
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.9rem', flexWrap: 'wrap', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+              <span>Scanned: {sourceCoverage.successfullyScanned}</span>
+              <span>Zero jobs: {sourceCoverage.zeroJobsAfterSuccessfulScan}</span>
+              <span>Unsupported: {sourceCoverage.unsupportedOrUnconfigured}</span>
+              <span>Failing: {sourceCoverage.failing}</span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -347,6 +415,67 @@ export const NewDiscovery: React.FC<NewDiscoveryProps> = ({
               onChange={setLocations}
               helperText="Leave empty to search globally across all office locations."
             />
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem', marginBottom: '1.5rem' }}>
+            <h3 style={{ fontSize: '1rem', margin: '0 0 0.25rem' }}>Candidate job-fit profile</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: '0 0 1rem' }}>
+              Saved with your next scan. Missing details lower confidence; only explicit hard mismatches exclude a posting.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.875rem' }}>
+              <div className="form-group">
+                <label className="form-label">Technical skills</label>
+                <textarea className="form-input" rows={2} value={formatList(technicalSkills)} onChange={(e) => setTechnicalSkills(parseList(e.target.value))} placeholder="Python, TypeScript, React, SQL" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Required skills (hard filter)</label>
+                <textarea className="form-input" rows={2} value={formatList(requiredSkills)} onChange={(e) => setRequiredSkills(parseList(e.target.value))} placeholder="Only skills you require for eligibility" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Excluded role terms</label>
+                <textarea className="form-input" rows={2} value={formatList(excludedRoles)} onChange={(e) => setExcludedRoles(parseList(e.target.value))} placeholder="Senior, Principal, Manager" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Exclude locations</label>
+                <textarea className="form-input" rows={2} value={formatList(excludedLocations)} onChange={(e) => setExcludedLocations(parseList(e.target.value))} placeholder="Locations you cannot work from" />
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.75rem', marginTop: '0.25rem' }}>
+              <div className="form-group">
+                <label className="form-label">Graduation year</label>
+                <input className="form-input" type="number" min="2000" max="2100" value={graduationYear} onChange={(e) => setGraduationYear(e.target.value)} placeholder="2027" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Eligible graduation from</label>
+                <input className="form-input" type="number" min="2000" max="2100" value={eligibleYearMin} onChange={(e) => setEligibleYearMin(e.target.value)} placeholder="Optional" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Eligible graduation through</label>
+                <input className="form-input" type="number" min="2000" max="2100" value={eligibleYearMax} onChange={(e) => setEligibleYearMax(e.target.value)} placeholder="Optional" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Remote preference</label>
+                <select className="form-input" value={remotePreference} onChange={(e) => setRemotePreference(e.target.value as typeof remotePreference)}>
+                  <option value="any">Any work arrangement</option>
+                  <option value="remote_preferred">Prefer remote</option>
+                  <option value="remote_only">Remote only</option>
+                </select>
+              </div>
+            </div>
+            <div style={{ marginTop: '0.5rem' }}>
+              <div className="form-label">Experience levels</div>
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                {[
+                  ['internship', 'Internship'], ['new_grad', 'New graduate'], ['junior', 'Junior'],
+                  ['mid', 'Mid-level'], ['senior', 'Senior'],
+                ].map(([value, label]) => (
+                  <label key={value} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8125rem' }}>
+                    <input type="checkbox" checked={experienceLevels.includes(value)} onChange={(e) => setExperienceLevels(e.target.checked ? [...experienceLevels, value] : experienceLevels.filter((level) => level !== value))} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Optional Job URL and Notes */}

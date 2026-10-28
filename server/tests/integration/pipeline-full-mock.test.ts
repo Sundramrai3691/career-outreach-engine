@@ -7,6 +7,7 @@ import { DiscoveryOrchestrator } from '../../src/services/contact-discovery/disc
 import { IContactProvider } from '../../src/providers/base.provider.js';
 import { ProviderName } from '../../src/models/types.js';
 import { JobDiscoveryService } from '../../src/services/job-discovery/job-discovery.service.js';
+import { createIsolatedPrisma } from '../helpers/isolated-prisma.js';
 
 // Hoist Google API mocks
 const mocks = vi.hoisted(() => ({
@@ -92,6 +93,7 @@ describe('Complete Outreach Pipeline with Fallbacks & Safe Gmail Drafts', () => 
   }
 
   let prisma: PrismaClient;
+  let cleanupDatabase: () => Promise<void>;
   let importService: ContactImportService;
   let workspaceService: GoogleWorkspaceService;
   let gmailService: NativeGmailService;
@@ -106,14 +108,16 @@ describe('Complete Outreach Pipeline with Fallbacks & Safe Gmail Drafts', () => 
   };
 
   beforeAll(async () => {
-    prisma = new PrismaClient();
+    const isolated = await createIsolatedPrisma();
+    prisma = isolated.prisma;
+    cleanupDatabase = isolated.cleanup;
     importService = new ContactImportService(prisma);
     workspaceService = new GoogleWorkspaceService(prisma, mockGoogleAuth);
     gmailService = new NativeGmailService(prisma, mockGoogleAuth);
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    if (cleanupDatabase) await cleanupDatabase();
   });
 
   it('Step 1 & 2: Imports contacts from CSV with validation, deduplication, and source provenance', async () => {

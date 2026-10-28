@@ -52,13 +52,13 @@ export class OfficialCareersProvider implements JobSourceProvider {
 
     const robots = await this.fetchRobots(pageUrl.origin, pageUrl.pathname);
     if (!robots.allowed) {
-      throw new JobSourceError('The company robots.txt disallows this careers-page path.', 'unsupported_source');
+      throw new JobSourceError('The company robots.txt disallows this careers-page path.', 'blocked');
     }
 
     const response = await this.fetchPage(pageUrl);
     if (!response.ok) {
       if (response.status === 429) throw new JobSourceError('Company careers site rate limit reached.', 'rate_limited');
-      if (response.status === 403) throw new JobSourceError('Company careers page denied access.', 'unsupported_source');
+      if (response.status === 401 || response.status === 403) throw new JobSourceError('Company careers page denied access.', 'blocked');
       throw new JobSourceError(`Company careers page returned HTTP ${response.status}.`, 'provider_failure');
     }
     if (!/text\/html/i.test(response.headers.get('content-type') || '')) {
@@ -79,7 +79,7 @@ export class OfficialCareersProvider implements JobSourceProvider {
       if (careersPage && careersPage.href !== finalUrl.href) {
         const careersRobots = await this.fetchRobots(careersPage.origin, careersPage.pathname);
         if (!careersRobots.allowed) {
-          throw new JobSourceError('The company robots.txt disallows its careers-page path.', 'unsupported_source');
+          throw new JobSourceError('The company robots.txt disallows its careers-page path.', 'blocked');
         }
         const careersResponse = await this.fetchPage(careersPage);
         if (careersResponse.status === 429) throw new JobSourceError('Company careers site rate limit reached.', 'rate_limited');

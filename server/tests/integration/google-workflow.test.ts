@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { GoogleWorkspaceService } from '../../src/services/google/google.service.js';
 import { NativeGmailService } from '../../src/services/gmail/gmail.service.js';
+import { createIsolatedPrisma } from '../helpers/isolated-prisma.js';
 
 // Hoist mock clients so Vitest hoisting works cleanly
 const mocks = vi.hoisted(() => ({
@@ -49,6 +50,7 @@ vi.mock('googleapis', () => ({
 
 describe('Google Workspace & Mail Merge Workflow Integration', () => {
   let prisma: PrismaClient;
+  let cleanupDatabase: () => Promise<void>;
   let workspaceService: GoogleWorkspaceService;
   let gmailService: NativeGmailService;
 
@@ -62,13 +64,15 @@ describe('Google Workspace & Mail Merge Workflow Integration', () => {
   };
 
   beforeAll(async () => {
-    prisma = new PrismaClient();
+    const isolated = await createIsolatedPrisma();
+    prisma = isolated.prisma;
+    cleanupDatabase = isolated.cleanup;
     workspaceService = new GoogleWorkspaceService(prisma, mockGoogleAuth);
     gmailService = new NativeGmailService(prisma, mockGoogleAuth);
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    if (cleanupDatabase) await cleanupDatabase();
   });
 
   it('prepares Google Mail Merge spreadsheet, docs template, and instructions', async () => {

@@ -1,0 +1,20 @@
+[
+  {
+    "label": "graduate software engineer",
+    "title": "Software Engineer, University Graduate",
+    "location": "Remote - United States",
+    "description": "Class of 2027. Entry-level role building services with Python, SQL, and React."
+  },
+  {
+    "label": "backend engineer",
+    "title": "Junior Backend Engineer",
+    "location": "San Francisco, CA",
+    "description": "0-2 years of experience. Build APIs with Python, PostgreSQL, and distributed systems."
+  },
+  {
+    "label": "AI and machine learning engineer",
+    "title": "AI/ML Engineer, Early Career",
+    "location": "New York, NY",
+    "description": "Recent graduates welcome. Work on machine learning systems with Python and PyTorch."
+  }
+]

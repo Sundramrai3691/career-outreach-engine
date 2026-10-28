@@ -34,6 +34,9 @@ export class LeverJobsProvider implements JobSourceProvider {
     if (response.status === 404) {
       throw new JobSourceError('Configured Lever site was not found.', 'unsupported_source');
     }
+    if (response.status === 401 || response.status === 403) {
+      throw new JobSourceError(`Lever denied the public postings request (HTTP ${response.status}).`, 'blocked');
+    }
     if (response.status === 429) {
       throw new JobSourceError('Lever rate limit reached.', 'rate_limited');
     }
@@ -50,10 +53,11 @@ export class LeverJobsProvider implements JobSourceProvider {
     if (!Array.isArray(payload)) {
       throw new JobSourceError('Lever response was not a postings array.', 'provider_failure');
     }
+    if (payload.some((posting) => !posting || typeof posting.id !== 'string' || typeof posting.text !== 'string' || typeof posting.hostedUrl !== 'string')) {
+      throw new JobSourceError('Lever response contains a malformed posting record.', 'provider_failure');
+    }
 
-    return payload
-      .filter((posting) => posting && typeof posting.id === 'string' && typeof posting.text === 'string' && typeof posting.hostedUrl === 'string')
-      .map((posting) => ({
+    return payload.map((posting) => ({
         externalId: posting.id,
         title: posting.text,
         location: posting.categories?.location,
